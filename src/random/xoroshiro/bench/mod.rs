@@ -6,6 +6,25 @@ pub struct BenchStats {
     pub avg: Duration,
     pub min: Duration,
     pub max: Duration,
+    pub std_dev: Duration,
+}
+
+/// Calculate standard deviation from a list of durations
+fn calculate_std_dev(times: &[Duration], mean: Duration) -> Duration {
+    if times.len() < 2 {
+        return Duration::ZERO;
+    }
+    
+    let mean_ns = mean.as_nanos() as f64;
+    let variance: f64 = times.iter()
+        .map(|t| {
+            let diff = t.as_nanos() as f64 - mean_ns;
+            diff * diff
+        })
+        .sum::<f64>() / (times.len() - 1) as f64;
+    
+    let std_dev_ns = variance.sqrt();
+    Duration::from_nanos(std_dev_ns as u64)
 }
 
 pub fn benchmark_variant(
@@ -48,9 +67,10 @@ pub fn benchmark_variant(
 
     let min = *sample_avgs.iter().min().unwrap();
     let max = *sample_avgs.iter().max().unwrap();
-    let avg = sample_avgs.into_iter().sum::<Duration>() / samples as u32;
+    let avg = sample_avgs.iter().copied().sum::<Duration>() / samples as u32;
+    let std_dev = calculate_std_dev(&sample_avgs, avg);
 
-    BenchStats { avg, min, max }
+    BenchStats { avg, min, max, std_dev }
 }
 
 pub struct BenchResult {
@@ -59,6 +79,7 @@ pub struct BenchResult {
     pub avg_time: Duration,
     pub min_time: Duration,
     pub max_time: Duration,
+    pub std_dev: Duration,
     pub result: u64, // Just the last random number generated
     pub compiler: Option<String>,
 }
@@ -80,6 +101,7 @@ pub fn run_all_benchmarks(size: usize, iterations: usize) -> Vec<BenchResult> {
             avg_time: stats.avg,
             min_time: stats.min,
             max_time: stats.max,
+            std_dev: stats.std_dev,
             result,
             compiler: v.compiler.map(|s| s.to_string()),
         }

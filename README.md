@@ -33,6 +33,8 @@ src/
 |-----------|----------|----------|-------------|
 | `dot_product` | math | original, scalar_opt, x86_64-sse2, x86_64-avx2, c-original, c-scalar_opt, c-x86_64-sse2 | Sum of products of vector elements |
 | `xoroshiro128++` | random | original, x86_64-asm, c-original | High-speed pseudo-random number generator |
+| `call_vs_branch` | control_flow | original, x86_64-asm-call, x86_64-asm-branch, x86_64-asm-inline | Comparison between CALL, JMP branches, and inline code |
+| `elseif_vs_jumptable` | control_flow | original, x86_64-asm-branch, x86_64-asm-jumptable, x86_64-asm-branchless | Comparison between branches (Jcc), jump tables, and branchless (CMOV) |
 
 ### Variant Naming Convention
 

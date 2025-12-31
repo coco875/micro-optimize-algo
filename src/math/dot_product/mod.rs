@@ -57,6 +57,7 @@ impl AlgorithmRunner for DotProductRunner {
                 avg_time: r.avg_time,
                 min_time: r.min_time,
                 max_time: r.max_time,
+                std_dev: r.std_dev,
                 iterations,
                 result_sample: r.result as f64,
                 compiler: r.compiler,

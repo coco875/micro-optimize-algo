@@ -6,6 +6,7 @@ pub mod math;
 pub mod registry;
 pub mod tui;
 pub mod random;
+pub mod control_flow;
 
 /// Re-export commonly used items
 pub mod prelude {

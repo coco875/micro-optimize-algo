@@ -90,7 +90,7 @@ pub fn run_and_display(
         println!("    {}", "─".repeat(100));
         println!(
             "    {:<30} {:>10} {:>10} {:>10} {:>10} {:>12} {:>12}",
-            "Variant", "Average", "Min", "Max", "Speedup", "Time Var.", "Rel. Error"
+            "Variant", "Average", "Min", "Max", "Speedup", "CV", "Rel. Error"
         );
         println!("    {}", "─".repeat(100));
         
@@ -101,13 +101,13 @@ pub fn run_and_display(
         for result in &results {
             let speedup = baseline_time / result.avg_time.as_nanos() as f64;
             
-            // Calculate Time Variation: (Max - Min) / Avg
+            // Calculate Coefficient of Variation (CV): std_dev / mean
+            // This is a more statistically meaningful measure than (max-min)/avg
             let avg_ns = result.avg_time.as_nanos() as f64;
-            let min_ns = result.min_time.as_nanos() as f64;
-            let max_ns = result.max_time.as_nanos() as f64;
+            let std_dev_ns = result.std_dev.as_nanos() as f64;
             
-            let time_var = if avg_ns > 0.0 {
-                (max_ns - min_ns) / avg_ns
+            let cv = if avg_ns > 0.0 {
+                std_dev_ns / avg_ns
             } else {
                 0.0
             };
@@ -132,7 +132,7 @@ pub fn run_and_display(
                 result.min_time,
                 result.max_time,
                 speedup,
-                time_var * 100.0,
+                cv * 100.0,
                 relative_error,
             );
         }

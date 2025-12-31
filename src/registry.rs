@@ -12,6 +12,7 @@ pub struct BenchmarkResult {
     pub avg_time: Duration,
     pub min_time: Duration,
     pub max_time: Duration,
+    pub std_dev: Duration,  // Standard deviation of timing measurements
     pub iterations: usize,
 
     pub result_sample: f64,
@@ -94,6 +95,8 @@ pub fn build_registry() -> AlgorithmRegistry {
     // Register all algorithms here
     registry.register(crate::math::dot_product::DotProductRunner);
     registry.register(crate::random::xoroshiro::XoroshiroRunner);
+    registry.register(crate::control_flow::call_vs_branch::CallVsBranchRunner);
+    registry.register(crate::control_flow::elseif_vs_jumptable::ElseIfVsJumpTableRunner);
     
     registry
 }
