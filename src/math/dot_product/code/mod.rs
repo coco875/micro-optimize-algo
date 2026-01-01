@@ -15,7 +15,9 @@ pub use original::dot_product_original;
 pub use scalar_opt::dot_product_scalar_opt;
 #[cfg(target_arch = "x86_64")]
 pub use x86_64_sse2::dot_product_x86_64_sse2;
-pub use c_impl::{dot_product_c_original, dot_product_c_scalar_opt, dot_product_c_x86_64_sse2, C_IMPL_AVAILABLE};
+pub use c_impl::{dot_product_c_original, dot_product_c_scalar_opt, C_IMPL_AVAILABLE};
+#[cfg(target_arch = "x86_64")]
+pub use c_impl::dot_product_c_x86_64_sse2;
 
 #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
 pub use x86_64_avx2::dot_product_x86_64_avx2;
@@ -90,6 +92,7 @@ pub fn available_variants() -> Vec<VariantInfo> {
             function: dot_product_c_scalar_opt,
             compiler: Some(compiler),
         });
+        #[cfg(target_arch = "x86_64")]
         variants.push(VariantInfo {
             name: "c-x86_64-sse2",
             description: "C with SSE2 SIMD intrinsics",

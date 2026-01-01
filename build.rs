@@ -41,10 +41,33 @@ fn main() {
 
             let mut build = cc::Build::new();
             
+            // Get target architecture
+            let target_arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
+            
             // Auto-detect all C files in src/ directory
             let c_files = glob::glob("src/**/*.c")
                 .expect("Failed to read glob pattern")
-                .filter_map(|entry| entry.ok());
+                .filter_map(|entry| entry.ok())
+                .filter(|path| {
+                    // Filter architecture-specific files based on target
+                    let filename = path.file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("");
+                    
+                    // Skip x86_64-specific files on non-x86_64 targets
+                    if filename.contains("x86_64") && target_arch != "x86_64" {
+                        println!("cargo:warning=Skipping {} (requires x86_64, building for {})", filename, target_arch);
+                        return false;
+                    }
+                    
+                    // Skip aarch64-specific files on non-aarch64 targets
+                    if filename.contains("aarch64") && target_arch != "aarch64" {
+                        println!("cargo:warning=Skipping {} (requires aarch64, building for {})", filename, target_arch);
+                        return false;
+                    }
+                    
+                    true
+                });
 
             for file in c_files {
                 println!("cargo:rerun-if-changed={}", file.display());

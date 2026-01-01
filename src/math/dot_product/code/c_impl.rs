@@ -8,6 +8,7 @@ mod ffi {
     extern "C" {
         pub fn dot_product_c_original(a: *const c_float, b: *const c_float, len: size_t) -> c_float;
         pub fn dot_product_c_scalar_opt(a: *const c_float, b: *const c_float, len: size_t) -> c_float;
+        #[cfg(target_arch = "x86_64")]
         pub fn dot_product_c_x86_64_sse2(a: *const c_float, b: *const c_float, len: size_t) -> c_float;
     }
 }
@@ -31,7 +32,7 @@ pub fn dot_product_c_scalar_opt(a: &[f32], b: &[f32]) -> f32 {
 }
 
 /// C x86_64 SSE2 implementation wrapper
-#[cfg(c_implementation_active)]
+#[cfg(all(c_implementation_active, target_arch = "x86_64"))]
 pub fn dot_product_c_x86_64_sse2(a: &[f32], b: &[f32]) -> f32 {
     assert_eq!(a.len(), b.len(), "Vectors must have the same length");
     unsafe {
@@ -57,7 +58,7 @@ pub fn dot_product_c_scalar_opt(_a: &[f32], _b: &[f32]) -> f32 {
     panic!("C implementation not compiled (requires GCC/Clang)")
 }
 
-#[cfg(not(c_implementation_active))]
+#[cfg(all(not(c_implementation_active), target_arch = "x86_64"))]
 pub fn dot_product_c_x86_64_sse2(_a: &[f32], _b: &[f32]) -> f32 {
     panic!("C implementation not compiled (requires GCC/Clang)")
 }
