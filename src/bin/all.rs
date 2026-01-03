@@ -9,8 +9,6 @@
 use micro_optimize_algo::registry::build_registry;
 use std::env;
 
-
-
 fn main() {
     let args: Vec<String> = env::args().collect();
     let registry = build_registry();
@@ -18,8 +16,10 @@ fn main() {
     // Parse arguments
     let mut show_list = false;
     let mut show_help = false;
-    let mut sizes: Vec<usize> = vec![64, 256, 1024, 4096, 16384];
+    let mut sample_sizes: Vec<usize> = vec![64, 256, 1024, 4096, 16384];
     let mut iterations: usize = 10000;
+    let mut seed: Option<u64> = None;
+    let mut csv_path: Option<String> = None;
     let mut algorithm_filter: Option<String> = None;
     
     let mut i = 1;
@@ -30,7 +30,7 @@ fn main() {
             "--sizes" => {
                 i += 1;
                 if i < args.len() {
-                    sizes = args[i]
+                    sample_sizes = args[i]
                         .split(',')
                         .filter_map(|s| s.trim().parse().ok())
                         .collect();
@@ -40,6 +40,18 @@ fn main() {
                 i += 1;
                 if i < args.len() {
                     iterations = args[i].parse().unwrap_or(10000);
+                }
+            }
+            "--seed" => {
+                i += 1;
+                if i < args.len() {
+                    seed = args[i].parse().ok();
+                }
+            }
+            "--csv" => {
+                i += 1;
+                if i < args.len() {
+                    csv_path = Some(args[i].clone());
                 }
             }
             arg if !arg.starts_with('-') => {
@@ -67,8 +79,9 @@ fn main() {
     
     match algorithm_filter {
         Some(name) => {
+            // Running a single algorithm - use the standard sequential method
             match registry.find(&name) {
-                Some(algo) => micro_optimize_algo::tui::run_and_display(algo, &sizes, iterations),
+                Some(algo) => micro_optimize_algo::tui::run_and_display(algo, &sample_sizes, iterations),
                 None => {
                     eprintln!("Algorithm '{}' not found.", name);
                     eprintln!("Available: {:?}", registry.list_names());
@@ -77,9 +90,15 @@ fn main() {
             }
         }
         None => {
-            for algo in registry.all() {
-                micro_optimize_algo::tui::run_and_display(algo.as_ref(), &sizes, iterations);
-            }
+            // Running all algorithms - use the randomized cross-algorithm method
+            let all_algos: Vec<_> = registry.all().iter().map(|a| a.as_ref()).collect();
+            micro_optimize_algo::tui::run_all_algorithms_randomized(
+                &all_algos, 
+                &sample_sizes, 
+                iterations, 
+                seed,
+                csv_path.as_deref(),
+            );
         }
     }
     

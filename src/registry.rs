@@ -6,6 +6,7 @@
 use std::time::Duration;
 
 /// Result from running a variant benchmark
+#[derive(Clone)]
 pub struct BenchmarkResult {
     pub variant_name: String,
     pub description: String,
@@ -19,6 +20,16 @@ pub struct BenchmarkResult {
     pub compiler: Option<String>,
 }
 
+/// A benchmark closure - a function that runs one iteration and returns result + timing
+pub struct BenchmarkClosure {
+    pub name: &'static str,
+    pub description: &'static str,
+    pub compiler: Option<&'static str>,
+    /// The actual benchmark function - runs one iteration, returns (result, elapsed_time)
+    /// Each implementation measures its own time internally to exclude FFI overhead for C variants
+    pub run: Box<dyn FnMut() -> (f64, Duration) + Send>,
+}
+
 /// Trait that all algorithm benchmarkers must implement
 pub trait AlgorithmRunner: Send + Sync {
     /// Name of the algorithm (e.g., "dot_product")
@@ -30,7 +41,7 @@ pub trait AlgorithmRunner: Send + Sync {
     /// Category (e.g., "math", "sorting")
     fn category(&self) -> &'static str;
     
-    /// Run benchmarks for all variants at a given input size
+    /// Run benchmarks for all variants at a given input size (legacy method)
     fn run_benchmarks(&self, size: usize, iterations: usize) -> Vec<BenchmarkResult>;
     
     /// Get list of available variant names
@@ -38,6 +49,15 @@ pub trait AlgorithmRunner: Send + Sync {
 
     /// Verify correctness of all variants against the reference
     fn verify(&self) -> Result<(), String>;
+    
+    /// Get benchmark closures for randomized execution
+    /// Each closure runs one iteration of one variant
+    /// The seed is used to generate reproducible test data
+    fn get_benchmark_closures(&self, size: usize, seed: u64) -> Vec<BenchmarkClosure>;
+    
+    /// Warmup all variants
+    /// The seed is used to generate reproducible test data
+    fn warmup(&self, size: usize, warmup_iterations: usize, seed: u64);
 }
 
 /// Global registry of all algorithms
@@ -100,3 +120,4 @@ pub fn build_registry() -> AlgorithmRegistry {
     
     registry
 }
+

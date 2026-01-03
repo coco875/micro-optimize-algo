@@ -7,6 +7,7 @@ pub mod registry;
 pub mod tui;
 pub mod random;
 pub mod control_flow;
+pub mod utils;
 
 /// Re-export commonly used items
 pub mod prelude {

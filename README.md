@@ -85,6 +85,62 @@ cargo run --release -- --sizes 1024,8192 --iter 1000
 cargo run --release -- --list
 ```
 
+### CLI Options
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--list`, `-l` | List all available algorithms | - |
+| `--help`, `-h` | Show help message | - |
+| `--sizes SIZES` | Comma-separated vector sizes | `64,256,1024,4096,16384` |
+| `--iter N` | Number of iterations per benchmark | `10000` |
+| `--seed N` | Random seed for reproducible runs | Time-based |
+| `--csv FILE` | Export raw timing data to CSV file | - |
+| `ALGORITHM` | Run only the specified algorithm | All algorithms |
+
+### Examples
+
+```bash
+# Basic usage
+cargo run --release
+
+# Custom sizes and iterations
+cargo run --release -- --sizes 128,512,2048 --iter 5000
+
+# Reproducible benchmark run
+cargo run --release -- --seed 12345
+
+# Export raw data for external analysis
+cargo run --release -- --csv results.csv
+
+# Combined options
+cargo run --release -- --sizes 1024 --iter 1000 --seed 42 --csv data.csv
+
+# Run specific algorithm
+cargo run --release -- dot_product --iter 5000
+```
+
+### CSV Export Format
+
+The `--csv` option exports all individual timing measurements:
+
+```csv
+algorithm,variant,compiler,size,iteration,time_ns,result
+dot_product,original,,64,0,44,-1.537
+dot_product,original,,64,1,43,-1.537
+dot_product,c-original,GCC,64,0,38,-1.537
+...
+```
+
+| Column | Description |
+|--------|-------------|
+| `algorithm` | Algorithm name |
+| `variant` | Implementation variant |
+| `compiler` | Compiler used (GCC, etc.) or empty for Rust |
+| `size` | Input size |
+| `iteration` | Iteration number |
+| `time_ns` | Execution time in nanoseconds |
+| `result` | Computation result (for verification) |
+
 ### Running Tests
 
 Verify the correctness of all algorithms:

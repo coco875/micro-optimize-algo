@@ -18,8 +18,10 @@ pub mod test;
 
 pub use code::*;
 
-use crate::registry::{AlgorithmRunner, BenchmarkResult};
+use crate::registry::{AlgorithmRunner, BenchmarkResult, BenchmarkClosure};
+use crate::utils::bench::SeededRng;
 use rand::Rng;
+use std::sync::Arc;
 
 /// Runner for the dot product algorithm
 pub struct DotProductRunner;
@@ -99,5 +101,46 @@ impl AlgorithmRunner for DotProductRunner {
         }
         
         Ok(())
+    }
+    
+    fn get_benchmark_closures(&self, size: usize, seed: u64) -> Vec<BenchmarkClosure> {
+        use std::time::Instant;
+        
+        let mut rng = SeededRng::new(seed);
+        let a: Arc<Vec<f32>> = Arc::new((0..size).map(|_| rng.next_f32_range()).collect());
+        let b: Arc<Vec<f32>> = Arc::new((0..size).map(|_| rng.next_f32_range()).collect());
+        
+        code::available_variants()
+            .into_iter()
+            .map(|v| {
+                let a = Arc::clone(&a);
+                let b = Arc::clone(&b);
+                let func = v.function;
+                
+                BenchmarkClosure {
+                    name: v.name,
+                    description: v.description,
+                    compiler: v.compiler,
+                    run: Box::new(move || {
+                        let start = Instant::now();
+                        let result = func(&a, &b);
+                        let elapsed = start.elapsed();
+                        (std::hint::black_box(result) as f64, elapsed)
+                    }),
+                }
+            })
+            .collect()
+    }
+    
+    fn warmup(&self, size: usize, warmup_iterations: usize, seed: u64) {
+        let mut rng = SeededRng::new(seed);
+        let a: Vec<f32> = (0..size).map(|_| rng.next_f32_range()).collect();
+        let b: Vec<f32> = (0..size).map(|_| rng.next_f32_range()).collect();
+        
+        for v in code::available_variants() {
+            for _ in 0..warmup_iterations {
+                std::hint::black_box((v.function)(&a, &b));
+            }
+        }
     }
 }

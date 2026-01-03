@@ -3,7 +3,9 @@ pub mod bench;
 #[cfg(test)]
 pub mod test;
 
-use crate::registry::{AlgorithmRunner, BenchmarkResult};
+use crate::registry::{AlgorithmRunner, BenchmarkResult, BenchmarkClosure};
+use std::hint::black_box;
+use std::cell::RefCell;
 
 pub struct XoroshiroRunner;
 
@@ -89,5 +91,52 @@ impl AlgorithmRunner for XoroshiroRunner {
         }
 
         Ok(())
+    }
+    
+    fn get_benchmark_closures(&self, size: usize, seed: u64) -> Vec<BenchmarkClosure> {
+        use std::time::Instant;
+        
+        code::available_variants()
+            .into_iter()
+            .map(|v| {
+                let func = v.function;
+                // Each closure has its own RNG state derived from seed
+                let state0 = RefCell::new(seed);
+                let state1 = RefCell::new(seed.wrapping_mul(0xDEADBEEF));
+                let size = size;
+                
+                BenchmarkClosure {
+                    name: v.name,
+                    description: v.description,
+                    compiler: v.compiler,
+                    run: Box::new(move || {
+                        let mut s0 = state0.borrow_mut();
+                        let mut s1 = state1.borrow_mut();
+                        let mut result = 0u64;
+                        
+                        let start = Instant::now();
+                        for _ in 0..size {
+                            result = func(&mut *s0, &mut *s1);
+                            black_box(result);
+                        }
+                        let elapsed = start.elapsed();
+                        
+                        (result as f64, elapsed)
+                    }),
+                }
+            })
+            .collect()
+    }
+    
+    fn warmup(&self, size: usize, warmup_iterations: usize, seed: u64) {
+        for v in code::available_variants() {
+            let mut s0: u64 = seed;
+            let mut s1: u64 = seed.wrapping_mul(0xDEADBEEF);
+            for _ in 0..warmup_iterations {
+                for _ in 0..size {
+                    black_box((v.function)(&mut s0, &mut s1));
+                }
+            }
+        }
     }
 }
