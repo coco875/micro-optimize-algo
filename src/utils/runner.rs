@@ -51,10 +51,13 @@ fn warmup_algorithms(
     }
 }
 
-pub fn list_tasks() -> Vec<Task> {
+fn list_tasks(algorithms: &[&dyn AlgorithmRunner], sample_sizes: &[usize], iterations: usize, seed: u64) -> Vec<Task> {
+    let mut tasks: Vec<Task> = Vec::new();
+    let mut num_closures = 0;
+    
     for (size_idx, &sample_size) in sample_sizes.iter().enumerate() {
         for (algo_idx, algo) in algorithms.iter().enumerate() {
-            let algo_seed = rng.next_u64();
+            let algo_seed = seed;
             
             for closure in algo.get_benchmark_closures(sample_size, algo_seed) {
                 let closure_idx = num_closures;
@@ -74,6 +77,7 @@ pub fn list_tasks() -> Vec<Task> {
             }
         }
     }
+    tasks
 }
 
 /// Run multiple algorithms with randomized execution order.
@@ -91,10 +95,8 @@ pub fn run_all_algorithms_randomized(
     let mut rng = SeededRng::new(actual_seed);
     
     // Collect all tasks - each iteration of each closure is a separate task
-    let mut tasks: Vec<Task> = Vec::new();
-    let mut num_closures = 0;
-    
-    
+    let mut tasks = list_tasks(algorithms, sample_sizes, iterations, actual_seed);
+    let mut num_closures = tasks.len();
     
     // Warmup
     warmup_algorithms(algorithms, sample_sizes, 3, actual_seed);
