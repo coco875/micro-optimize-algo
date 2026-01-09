@@ -74,6 +74,9 @@ fn main() {
                 build.file(file);
             }
             
+            // Also watch the src directory for new C files being added
+            println!("cargo:rerun-if-changed=src");
+            
             build
                 .opt_level(3)
                 .flag_if_supported("-ffast-math"); // Fast math is generally good for SIMD benchmarks
@@ -85,7 +88,7 @@ fn main() {
                  println!("cargo:warning=Rust target-cpu=native NOT detected. Disabling -march=native for C compilation to match Rust baseline.");
             }
 
-            build.compile("dot_product_c");
+            build.compile("micro_algo_c");
             
             println!("cargo:rustc-cfg=c_implementation_active");
             println!("cargo:rustc-env=C_COMPILER_NAME={}", compiler_name);
