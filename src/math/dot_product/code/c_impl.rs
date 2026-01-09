@@ -47,6 +47,13 @@ pub const C_IMPL_AVAILABLE: bool = true;
 #[cfg(not(c_implementation_active))]
 pub const C_IMPL_AVAILABLE: bool = false;
 
+/// Name of the C compiler used
+#[cfg(c_implementation_active)]
+pub const COMPILER_NAME: Option<&str> = Some(env!("C_COMPILER_NAME"));
+
+#[cfg(not(c_implementation_active))]
+pub const COMPILER_NAME: Option<&str> = None;
+
 // Stub implementations for missing C compiler
 #[cfg(not(c_implementation_active))]
 pub fn dot_product_c_original(_a: &[f32], _b: &[f32]) -> f32 {

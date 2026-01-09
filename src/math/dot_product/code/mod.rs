@@ -77,27 +77,29 @@ pub fn available_variants() -> Vec<VariantInfo> {
     }
 
     // Add C implementations if available
+    // Add C implementations if available
     if C_IMPL_AVAILABLE {
-        let compiler = env!("C_COMPILER_NAME");
+        // Use the constant exposed by c_impl
+        let compiler = c_impl::COMPILER_NAME;
         
         variants.push(VariantInfo {
             name: "c-original",
             description: "C reference implementation",
             function: dot_product_c_original,
-            compiler: Some(compiler),
+            compiler: compiler,
         });
         variants.push(VariantInfo {
             name: "c-scalar_opt",
             description: "C optimized scalar implementation",
             function: dot_product_c_scalar_opt,
-            compiler: Some(compiler),
+            compiler: compiler,
         });
         #[cfg(target_arch = "x86_64")]
         variants.push(VariantInfo {
             name: "c-x86_64-sse2",
             description: "C with SSE2 SIMD intrinsics",
             function: dot_product_c_x86_64_sse2,
-            compiler: Some(compiler),
+            compiler: compiler,
         });
     }
 

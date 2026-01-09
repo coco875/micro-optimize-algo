@@ -1,6 +1,7 @@
 //! Implementation variants for branch vs jumptable vs branchless comparison
 
 pub mod original;
+pub mod c_impl;
 #[cfg(target_arch = "x86_64")]
 pub mod x86_64_asm;
 
@@ -41,6 +42,21 @@ pub fn get_variants() -> Vec<Variant> {
             name: "x86_64-asm-branchless",
             description: "x86_64 assembly branchless with CMOV",
             func: x86_64_asm::dispatch_branchless,
+        });
+    }
+
+    // Register C implementations if available
+    if c_impl::C_IMPL_AVAILABLE {
+        variants.push(Variant {
+            name: "c-elseif",
+            description: "C if-else if chain",
+            func: c_impl::dispatch_operation_c_elseif,
+        });
+
+        variants.push(Variant {
+            name: "c-switch",
+            description: "C switch statement (likely jumptable)",
+            func: c_impl::dispatch_operation_c_switch,
         });
     }
     
