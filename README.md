@@ -159,6 +159,21 @@ RUSTFLAGS="-C target-cpu=native" cargo run --release
 
 > **Note:** This automatically detects the flag and enables `-march=native` for the C compiler, ensuring a fair performance comparison.
 
+### Assembly Extraction
+
+Extract and compare the generated assembly for Rust and C implementations:
+
+```bash
+# Extract all ASM for dot_product
+./scripts/extract_asm.sh dot_product
+
+# Output files:
+#   asm_output/dot_product_rust.s  - Rust assembly
+#   asm_output/dot_product_c.s     - C assembly (NEON/SSE vectorized)
+```
+
+This is useful for understanding why C with `-ffast-math` auto-vectorizes while Rust preserves IEEE 754 semantics.
+
 ## Adding a New Algorithm
 
 1. **Create Directory Structure**:
