@@ -18,14 +18,7 @@ pub fn run_all_benchmarks(a: &[f32], b: &[f32], iterations: usize) -> Vec<Benchm
     // Convert to generic format
     let variant_data: Vec<_> = variants
         .iter()
-        .map(|v| {
-            (
-                v.name.to_string(),
-                v.description.to_string(),
-                v.compiler.map(|s| s.to_string()),
-                v.function,
-            )
-        })
+        .map(|v| (v.name.to_string(), v.description.to_string(), v.function))
         .collect();
 
     let timings = run_generic_benchmark(

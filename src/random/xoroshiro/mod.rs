@@ -93,7 +93,6 @@ impl AlgorithmRunner for XoroshiroRunner {
                 BenchmarkClosure {
                     name: v.name,
                     description: v.description,
-                    compiler: v.compiler,
                     run: Box::new(move || {
                         let mut s0 = state0.borrow_mut();
                         let mut s1 = state1.borrow_mut();

@@ -105,7 +105,6 @@ impl AlgorithmRunner for DotProductRunner {
                 BenchmarkClosure {
                     name: v.name,
                     description: v.description,
-                    compiler: v.compiler,
                     run: Box::new(move || {
                         let start = Instant::now();
                         let result = func(&a, &b);

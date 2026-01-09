@@ -29,7 +29,6 @@ pub struct GroupedResults {
 pub struct RawTimingData {
     pub algo_name: String,
     pub variant_name: String,
-    pub compiler: Option<String>,
     pub size: usize,
     pub timings: Vec<Duration>,
     pub sample: f64,
@@ -171,13 +170,11 @@ pub fn run_all_algorithms_randomized(
             std_dev: calculate_std_dev(times, avg),
             iterations: times.len(),
             result_sample: samples[task.closure_idx],
-            compiler: closure.compiler.map(|s| s.to_string()),
         });
 
         raw_data.push(RawTimingData {
             algo_name: algo.name().to_string(),
             variant_name: closure.name.to_string(),
-            compiler: closure.compiler.map(|s| s.to_string()),
             size,
             timings: times.clone(),
             sample: samples[task.closure_idx],
@@ -202,7 +199,14 @@ pub fn export_csv(path: &str, data: &[RawTimingData]) -> std::io::Result<()> {
     )?;
 
     for entry in data {
-        let compiler = entry.compiler.as_deref().unwrap_or("");
+        // Retrieve global C compiler name for CSV if applicable (not stored per variant anymore but we can lookup or just use global)
+        // Or cleaner: just use empty or global if needed.
+        let compiler =
+            crate::utils::C_COMPILER_NAME.unwrap_or(if entry.variant_name.starts_with("c-") {
+                "Unknown"
+            } else {
+                ""
+            });
 
         for (iter_idx, timing) in entry.timings.iter().enumerate() {
             writeln!(

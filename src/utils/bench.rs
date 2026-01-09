@@ -175,7 +175,6 @@ use std::collections::HashMap;
 pub struct VariantTiming {
     pub name: String,
     pub description: String,
-    pub compiler: Option<String>,
     pub times: Vec<Duration>,
     pub result_sample: f64,
 }
@@ -187,12 +186,12 @@ pub struct VariantTiming {
 /// * `F` - Execution function: takes variant and returns result as f64
 ///
 /// # Arguments
-/// * `variants` - List of (name, description, compiler, variant) tuples
+/// * `variants` - List of (name, description, variant) tuples
 /// * `samples_per_variant` - Number of samples to collect per variant
 /// * `warmup_fn` - Warmup function called once per variant
 /// * `execute_fn` - Function to execute and time (returns result)
 pub fn run_generic_benchmark<V, W, E>(
-    variants: &[(String, String, Option<String>, V)],
+    variants: &[(String, String, V)],
     samples_per_variant: usize,
     mut warmup_fn: W,
     mut execute_fn: E,
@@ -207,7 +206,7 @@ where
     }
 
     // Warmup
-    for (_, _, _, variant) in variants {
+    for (_, _, variant) in variants {
         warmup_fn(variant);
     }
 
@@ -225,7 +224,7 @@ where
 
     // Execute
     for (variant_idx, _) in tasks {
-        let (_, _, _, variant) = &variants[variant_idx];
+        let (_, _, variant) = &variants[variant_idx];
         let (elapsed, result) = execute_fn(variant);
         timing_results.get_mut(&variant_idx).unwrap().push(elapsed);
         result_samples.insert(variant_idx, result);
@@ -235,12 +234,11 @@ where
     variants
         .iter()
         .enumerate()
-        .map(|(idx, (name, description, compiler, _))| {
+        .map(|(idx, (name, description, _))| {
             let times = timing_results.remove(&idx).unwrap();
             VariantTiming {
                 name: name.clone(),
                 description: description.clone(),
-                compiler: compiler.clone(),
                 times,
                 result_sample: *result_samples.get(&idx).unwrap_or(&0.0),
             }
@@ -264,6 +262,5 @@ pub fn timing_to_result(
         std_dev,
         iterations,
         result_sample: timing.result_sample,
-        compiler: timing.compiler,
     }
 }

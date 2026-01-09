@@ -7,42 +7,35 @@ pub mod x86_64_asm;
 /// Function signature for the test functions
 pub type TestFn = fn(u32) -> u32;
 
-/// Variant descriptor
-pub struct Variant {
-    pub name: &'static str,
-    pub description: &'static str,
-    pub func: TestFn,
-}
+use crate::utils::VariantInfo;
 
 /// Returns all available variants
-pub fn get_variants() -> Vec<Variant> {
+pub fn get_variants() -> Vec<VariantInfo<TestFn>> {
     #[allow(unused_mut)]
-    let mut variants = vec![
-        Variant {
-            name: "original",
-            description: "Rust function calls (compiler decides inlining)",
-            func: original::process_with_calls,
-        },
-    ];
-    
+    let mut variants: Vec<VariantInfo<TestFn>> = vec![VariantInfo {
+        name: "original",
+        description: "Rust function calls (compiler decides inlining)",
+        function: original::process_with_calls,
+    }];
+
     #[cfg(target_arch = "x86_64")]
     {
-        variants.push(Variant {
+        variants.push(VariantInfo {
             name: "x86_64-asm-call",
             description: "x86_64 assembly with explicit CALL/RET",
-            func: x86_64_asm::process_with_calls,
+            function: x86_64_asm::process_with_calls,
         });
-        variants.push(Variant {
+        variants.push(VariantInfo {
             name: "x86_64-asm-branch",
             description: "x86_64 assembly with JMP branches (no CALL overhead)",
-            func: x86_64_asm::process_with_branch,
+            function: x86_64_asm::process_with_branch,
         });
-        variants.push(Variant {
+        variants.push(VariantInfo {
             name: "x86_64-asm-inline",
             description: "x86_64 assembly fully inlined (no jumps)",
-            func: x86_64_asm::process_inline,
+            function: x86_64_asm::process_inline,
         });
     }
-    
+
     variants
 }

@@ -29,14 +29,7 @@ pub fn run_benchmarks(size: usize, iterations: usize) -> Vec<BenchmarkResult> {
     // Convert to generic format
     let variant_data: Vec<_> = variants
         .iter()
-        .map(|v| {
-            (
-                v.name.to_string(),
-                v.description.to_string(),
-                None::<String>,
-                v.func,
-            )
-        })
+        .map(|v| (v.name.to_string(), v.description.to_string(), v.function))
         .collect();
 
     let timings = run_generic_benchmark(

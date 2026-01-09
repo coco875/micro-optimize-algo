@@ -15,11 +15,11 @@
 //! - Jump Table has setup overhead (bounds check, address calculation)
 //! - For small number of cases (<4), else-if may be faster
 
-pub mod code;
 pub mod bench;
+pub mod code;
 pub mod test;
 
-use crate::registry::{AlgorithmRunner, BenchmarkResult, BenchmarkClosure};
+use crate::registry::{AlgorithmRunner, BenchmarkClosure, BenchmarkResult};
 use std::hint::black_box;
 use std::sync::Arc;
 
@@ -27,7 +27,7 @@ use std::sync::Arc;
 fn generate_test_data(size: usize, seed: u64) -> Vec<(u8, u32)> {
     let mut data = Vec::with_capacity(size);
     let mut rng = seed;
-    
+
     for _ in 0..size {
         rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1);
         let opcode = ((rng >> 32) % 8) as u8;
@@ -63,45 +63,44 @@ impl AlgorithmRunner for ElseIfVsJumpTableRunner {
     fn verify(&self) -> Result<(), String> {
         test::verify_all()
     }
-    
+
     fn get_benchmark_closures(&self, size: usize, seed: u64) -> Vec<BenchmarkClosure> {
         use std::time::Instant;
-        
+
         let data: Arc<Vec<(u8, u32)>> = Arc::new(generate_test_data(size, seed));
-        
+
         code::get_variants()
             .into_iter()
             .map(|v| {
                 let data = Arc::clone(&data);
-                let func = v.func;
-                
+                let func = v.function;
+
                 BenchmarkClosure {
                     name: v.name,
                     description: v.description,
-                    compiler: None,
                     run: Box::new(move || {
                         let mut last_result = 0u32;
-                        
+
                         let start = Instant::now();
                         for &(op, val) in data.iter() {
                             last_result = black_box(func(black_box(op), black_box(val)));
                         }
                         let elapsed = start.elapsed();
-                        
+
                         (last_result as f64, elapsed)
                     }),
                 }
             })
             .collect()
     }
-    
+
     fn warmup(&self, size: usize, warmup_iterations: usize, seed: u64) {
         let data = generate_test_data(size, seed);
-        
+
         for v in code::get_variants() {
             for _ in 0..warmup_iterations {
                 for &(op, val) in data.iter().take(100) {
-                    black_box((v.func)(black_box(op), black_box(val)));
+                    black_box((v.function)(black_box(op), black_box(val)));
                 }
             }
         }

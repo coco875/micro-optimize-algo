@@ -4,13 +4,29 @@
 
 use crate::registry::{AlgorithmRegistry, AlgorithmRunner, BenchmarkResult};
 use crate::utils::runner;
+use terminal_size::{terminal_size, Width};
+
+/// Get the current terminal width, defaulting to 100 if detection fails
+fn get_term_width() -> usize {
+    if let Some((Width(w), _)) = terminal_size() {
+        w as usize
+    } else {
+        100
+    }
+}
 
 /// Get sorting priority for a variant based on its name and compiler.
 /// Lower values sort first.
 /// Order: original (0), Rust (1), C by compiler then name (2), ASM (3)
 fn variant_sort_key(result: &BenchmarkResult) -> (u8, String, String) {
     let name = result.variant_name.to_lowercase();
-    let compiler = result.compiler.clone().unwrap_or_default().to_lowercase();
+    let compiler = if name.starts_with("c-") || name.starts_with("c_") {
+        crate::utils::C_COMPILER_NAME
+            .unwrap_or("unknown")
+            .to_lowercase()
+    } else {
+        String::new()
+    };
 
     if name == "original" {
         (0, String::new(), String::new())
@@ -21,7 +37,7 @@ fn variant_sort_key(result: &BenchmarkResult) -> (u8, String, String) {
     {
         // ASM/SIMD variants
         (3, name.clone(), compiler)
-    } else if name.starts_with("c-") || name.starts_with("c_") || !compiler.is_empty() {
+    } else if name.starts_with("c-") || name.starts_with("c_") {
         // C variants (have compiler or c-/c_ prefix)
         (2, compiler.clone(), name.clone())
     } else {
@@ -37,12 +53,16 @@ fn sort_variants(results: &mut [BenchmarkResult]) {
 
 /// Print algorithm info box
 pub fn print_algo_info_box(algo: &dyn AlgorithmRunner) {
+    let term_width = get_term_width();
+    let max_content_width = term_width.saturating_sub(4).max(40); // Minimal width of 40
+
     let variants_str = algo.available_variants().join(", ");
     let name_line = format!("Algorithm: {}", algo.name());
     let cat_line = format!("Category:  {}", algo.category());
     let desc_line = algo.description();
     let var_line = format!("Variants: {}", variants_str);
 
+    // Calculate required width based on content, capped at terminal width
     let content_width = [
         name_line.len(),
         cat_line.len(),
@@ -52,18 +72,44 @@ pub fn print_algo_info_box(algo: &dyn AlgorithmRunner) {
     .iter()
     .cloned()
     .max()
-    .unwrap_or(60);
+    .unwrap_or(60)
+    .min(max_content_width);
 
     let border = "─".repeat(content_width + 2);
 
     println!("┌{}┐", border);
-    println!("│ {:<width$} │", name_line, width = content_width);
-    println!("│ {:<width$} │", cat_line, width = content_width);
-    println!("│ {:<width$} │", desc_line, width = content_width);
+    println!(
+        "│ {:<width$} │",
+        truncate(&name_line, content_width),
+        width = content_width
+    );
+    println!(
+        "│ {:<width$} │",
+        truncate(&cat_line, content_width),
+        width = content_width
+    );
+    println!(
+        "│ {:<width$} │",
+        truncate(desc_line, content_width),
+        width = content_width
+    );
     println!("├{}┤", border);
-    println!("│ {:<width$} │", var_line, width = content_width);
+    println!(
+        "│ {:<width$} │",
+        truncate(&var_line, content_width),
+        width = content_width
+    );
     println!("└{}┘", border);
     println!();
+}
+
+/// Truncate string with ellipsis if it exceeds width
+fn truncate(s: &str, width: usize) -> String {
+    if s.len() <= width {
+        s.to_string()
+    } else {
+        format!("{}...", &s[..width.saturating_sub(3)])
+    }
 }
 
 /// Print results table for a single size
@@ -71,6 +117,12 @@ pub fn print_results_table(results: &[BenchmarkResult], size: usize, iterations:
     if results.is_empty() {
         return;
     }
+
+    let term_width = get_term_width();
+    // Fixed columns width: 15+15+15+10+12+12 = 79 chars + padding spaces ~ 85
+    let fixed_width = 85;
+    let variant_col_width = term_width.saturating_sub(fixed_width).max(20); // Min 20 chars for variant
+    let table_width = variant_col_width + fixed_width;
 
     let baseline_time = results
         .first()
@@ -80,12 +132,19 @@ pub fn print_results_table(results: &[BenchmarkResult], size: usize, iterations:
     let baseline_result = results.first().map(|r| r.result_sample).unwrap_or(0.0);
 
     println!("  Size: {} ({} iterations)", size, iterations);
-    println!("    {}", "─".repeat(100));
+    println!("    {}", "─".repeat(table_width));
     println!(
-        "    {:<30} {:>15} {:>15} {:>15} {:>10} {:>12} {:>12}",
-        "Variant", "Average", "Min", "Max", "Speedup", "CV", "Rel. Error"
+        "    {:<v_width$} {:>15} {:>15} {:>15} {:>10} {:>12} {:>12}",
+        "Variant",
+        "Average",
+        "Min",
+        "Max",
+        "Speedup",
+        "CV",
+        "Rel. Error",
+        v_width = variant_col_width
     );
-    println!("    {}", "─".repeat(100));
+    println!("    {}", "─".repeat(table_width));
 
     for result in results {
         let speedup = baseline_time / result.avg_time.as_nanos() as f64;
@@ -106,10 +165,15 @@ pub fn print_results_table(results: &[BenchmarkResult], size: usize, iterations:
             diff
         };
 
-        let display_name = match &result.compiler {
-            Some(c) => format!("{} ({})", result.variant_name, c),
-            None => result.variant_name.clone(),
-        };
+        let display_name =
+            if result.variant_name.starts_with("c-") || result.variant_name.starts_with("c_") {
+                match crate::utils::C_COMPILER_NAME {
+                    Some(c) => format!("{} ({})", result.variant_name, c),
+                    None => result.variant_name.clone(),
+                }
+            } else {
+                result.variant_name.clone()
+            };
 
         #[cfg(feature = "cpu_cycles")]
         let time_str = format!("{} {}", avg_ns as u64, crate::utils::bench::unit_name());
@@ -130,14 +194,15 @@ pub fn print_results_table(results: &[BenchmarkResult], size: usize, iterations:
         );
 
         println!(
-            "    {:<30} {:>15} {:>15} {:>15} {:>9.2}x {:>11.2}% {:>12.2e}",
-            display_name,
+            "    {:<v_width$} {:>15} {:>15} {:>15} {:>9.2}x {:>11.2}% {:>12.2e}",
+            truncate(&display_name, variant_col_width),
             time_str,
             min_str,
             max_str,
             speedup,
             cv * 100.0,
             relative_error,
+            v_width = variant_col_width
         );
     }
     println!();
@@ -145,9 +210,20 @@ pub fn print_results_table(results: &[BenchmarkResult], size: usize, iterations:
 
 /// Print the application header
 pub fn print_header() {
-    println!("╔══════════════════════════════════════════════════════════════╗");
-    println!("║              Micro-Optimize-Algo Benchmarks                  ║");
-    println!("╚══════════════════════════════════════════════════════════════╝");
+    let term_width = get_term_width().min(80); // Cap header at 80
+    let title = " Micro-Optimize-Algo Benchmarks ";
+    let padding = term_width.saturating_sub(title.len() + 2) / 2;
+
+    let border = "═".repeat(term_width);
+
+    println!("╔{}╗", border);
+    println!(
+        "║{}{}{}║",
+        " ".repeat(padding),
+        title,
+        " ".repeat(term_width - padding - title.len())
+    );
+    println!("╚{}╝", border);
     println!();
 }
 
