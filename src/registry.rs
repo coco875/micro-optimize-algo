@@ -11,6 +11,7 @@ pub struct BenchmarkResult {
     pub variant_name: String,
     pub description: String,
     pub avg_time: Duration,
+    pub median_time: Duration,  // Median timing measurement
     pub min_time: Duration,
     pub max_time: Duration,
     pub std_dev: Duration,  // Standard deviation of timing measurements

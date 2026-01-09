@@ -1,11 +1,11 @@
-pub mod code;
 pub mod bench;
+pub mod code;
 #[cfg(test)]
 pub mod test;
 
-use crate::registry::{AlgorithmRunner, BenchmarkResult, BenchmarkClosure};
-use std::hint::black_box;
+use crate::registry::{AlgorithmRunner, BenchmarkClosure, BenchmarkResult};
 use std::cell::RefCell;
+use std::hint::black_box;
 
 pub struct XoroshiroRunner;
 
@@ -23,10 +23,7 @@ impl AlgorithmRunner for XoroshiroRunner {
     }
 
     fn available_variants(&self) -> Vec<&'static str> {
-        code::available_variants()
-            .iter()
-            .map(|v| v.name)
-            .collect()
+        code::available_variants().iter().map(|v| v.name).collect()
     }
 
     fn run_benchmarks(&self, size: usize, iterations: usize) -> Vec<BenchmarkResult> {
@@ -37,26 +34,14 @@ impl AlgorithmRunner for XoroshiroRunner {
 
         // Benchmark generating 'size' random numbers per iteration
         bench::run_all_benchmarks(size, iterations)
-            .into_iter()
-            .map(|r| BenchmarkResult {
-                variant_name: r.name,
-                description: r.description,
-                avg_time: r.avg_time,
-                min_time: r.min_time,
-                max_time: r.max_time,
-                std_dev: r.std_dev,
-                iterations,
-                result_sample: r.result as f64, // Cast u64 to f64 for generic display
-                compiler: r.compiler,
-            })
-            .collect()
     }
 
     fn verify(&self) -> Result<(), String> {
         let variants = code::available_variants();
-        
+
         // Find reference implementation
-        let original_variant = variants.iter()
+        let original_variant = variants
+            .iter()
             .find(|v| v.name == "original")
             .ok_or("No 'original' variant found for reference")?;
 
@@ -78,7 +63,7 @@ impl AlgorithmRunner for XoroshiroRunner {
 
             let mut s0 = seed_lo_ref;
             let mut s1 = seed_hi_ref;
-            
+
             for (i, &expected) in expected_sequence.iter().enumerate() {
                 let result = (variant.function)(&mut s0, &mut s1);
                 if result != expected {
@@ -92,10 +77,10 @@ impl AlgorithmRunner for XoroshiroRunner {
 
         Ok(())
     }
-    
+
     fn get_benchmark_closures(&self, size: usize, seed: u64) -> Vec<BenchmarkClosure> {
         use std::time::Instant;
-        
+
         code::available_variants()
             .into_iter()
             .map(|v| {
@@ -104,7 +89,7 @@ impl AlgorithmRunner for XoroshiroRunner {
                 let state0 = RefCell::new(seed);
                 let state1 = RefCell::new(seed.wrapping_mul(0xDEADBEEF));
                 let size = size;
-                
+
                 BenchmarkClosure {
                     name: v.name,
                     description: v.description,
@@ -113,21 +98,21 @@ impl AlgorithmRunner for XoroshiroRunner {
                         let mut s0 = state0.borrow_mut();
                         let mut s1 = state1.borrow_mut();
                         let mut result = 0u64;
-                        
+
                         let start = Instant::now();
                         for _ in 0..size {
                             result = func(&mut *s0, &mut *s1);
                             black_box(result);
                         }
                         let elapsed = start.elapsed();
-                        
+
                         (result as f64, elapsed)
                     }),
                 }
             })
             .collect()
     }
-    
+
     fn warmup(&self, size: usize, warmup_iterations: usize, seed: u64) {
         for v in code::available_variants() {
             let mut s0: u64 = seed;

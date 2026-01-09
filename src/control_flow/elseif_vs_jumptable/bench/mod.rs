@@ -1,11 +1,10 @@
 //! Benchmarks for branch vs jumptable vs branchless comparison
 
-use crate::registry::BenchmarkResult;
-use crate::utils::bench::{shuffle, time_seed, compute_stats};
 use super::code::get_variants;
-use std::time::{Duration, Instant};
+use crate::registry::BenchmarkResult;
+use crate::utils::bench::{run_generic_benchmark, timing_to_result};
 use std::hint::black_box;
-use std::collections::HashMap;
+use std::time::Instant;
 
 /// Generate test data - random opcodes (0-7) and values
 fn generate_test_data(size: usize) -> Vec<(u8, u32)> {
@@ -27,56 +26,44 @@ pub fn run_benchmarks(size: usize, iterations: usize) -> Vec<BenchmarkResult> {
     if variants.is_empty() {
         return Vec::new();
     }
-    
+
     let samples_per_variant = iterations.min(100);
-    
-    // Warmup
-    for variant in &variants {
-        for &(op, val) in data.iter().take(100) {
-            black_box((variant.func)(black_box(op), black_box(val)));
-        }
-    }
-    
-    // Create and shuffle tasks
-    let mut tasks: Vec<(usize, usize)> = (0..variants.len())
-        .flat_map(|v| (0..samples_per_variant).map(move |s| (v, s)))
+
+    // Convert to generic format
+    let variant_data: Vec<_> = variants
+        .iter()
+        .map(|v| {
+            (
+                v.name.to_string(),
+                v.description.to_string(),
+                None::<String>, // No compiler for these variants
+                v.func,
+            )
+        })
         .collect();
-    shuffle(&mut tasks, time_seed());
-    
-    // Storage
-    let mut timing_results: HashMap<usize, Vec<Duration>> = (0..variants.len())
-        .map(|i| (i, Vec::with_capacity(samples_per_variant)))
-        .collect();
-    let mut last_results: HashMap<usize, u32> = HashMap::new();
-    
-    // Execute
-    for (variant_idx, _) in tasks {
-        let func = variants[variant_idx].func;
-        
-        let start = Instant::now();
-        let mut last_result = 0u32;
-        for &(op, val) in &data {
-            last_result = black_box(func(black_box(op), black_box(val)));
-        }
-        timing_results.get_mut(&variant_idx).unwrap().push(start.elapsed());
-        last_results.insert(variant_idx, last_result);
-    }
-    
-    // Collect results
-    variants.iter().enumerate().map(|(idx, variant)| {
-        let times = timing_results.get(&idx).unwrap();
-        let (avg, min, max, std_dev) = compute_stats(times);
-        
-        BenchmarkResult {
-            variant_name: variant.name.to_string(),
-            description: variant.description.to_string(),
-            avg_time: avg,
-            min_time: min,
-            max_time: max,
-            std_dev,
-            iterations,
-            result_sample: *last_results.get(&idx).unwrap_or(&0) as f64,
-            compiler: None,
-        }
-    }).collect()
+
+    let timings = run_generic_benchmark(
+        &variant_data,
+        samples_per_variant,
+        |func| {
+            // Warmup
+            for &(op, val) in data.iter().take(100) {
+                black_box(func(black_box(op), black_box(val)));
+            }
+        },
+        |func| {
+            // Execute and time
+            let start = Instant::now();
+            let mut last_result = 0u32;
+            for &(op, val) in &data {
+                last_result = black_box(func(black_box(op), black_box(val)));
+            }
+            (start.elapsed(), last_result as f64)
+        },
+    );
+
+    timings
+        .into_iter()
+        .map(|t| timing_to_result(t, iterations))
+        .collect()
 }

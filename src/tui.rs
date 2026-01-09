@@ -5,6 +5,36 @@
 use crate::registry::{AlgorithmRegistry, AlgorithmRunner, BenchmarkResult};
 use crate::utils::runner;
 
+/// Get sorting priority for a variant based on its name and compiler.
+/// Lower values sort first.
+/// Order: original (0), Rust (1), C by compiler then name (2), ASM (3)
+fn variant_sort_key(result: &BenchmarkResult) -> (u8, String, String) {
+    let name = result.variant_name.to_lowercase();
+    let compiler = result.compiler.clone().unwrap_or_default().to_lowercase();
+
+    if name == "original" {
+        (0, String::new(), String::new())
+    } else if name.contains("asm")
+        || name.contains("simd")
+        || name.contains("avx")
+        || name.contains("neon")
+    {
+        // ASM/SIMD variants
+        (3, name.clone(), compiler)
+    } else if name.starts_with("c-") || name.starts_with("c_") || !compiler.is_empty() {
+        // C variants (have compiler or c-/c_ prefix)
+        (2, compiler.clone(), name.clone())
+    } else {
+        // Rust variants (no compiler, no c- prefix)
+        (1, name.clone(), String::new())
+    }
+}
+
+/// Sort variants: original first, then grouped by language (Rust, C, ASM)
+fn sort_variants(results: &mut [BenchmarkResult]) {
+    results.sort_by(|a, b| variant_sort_key(a).cmp(&variant_sort_key(b)));
+}
+
 /// Print algorithm info box
 pub fn print_algo_info_box(algo: &dyn AlgorithmRunner) {
     let variants_str = algo.available_variants().join(", ");
@@ -13,12 +43,17 @@ pub fn print_algo_info_box(algo: &dyn AlgorithmRunner) {
     let desc_line = algo.description();
     let var_line = format!("Variants: {}", variants_str);
 
-    let content_width = [name_line.len(), cat_line.len(), desc_line.len(), var_line.len()]
-        .iter()
-        .cloned()
-        .max()
-        .unwrap_or(60);
-    
+    let content_width = [
+        name_line.len(),
+        cat_line.len(),
+        desc_line.len(),
+        var_line.len(),
+    ]
+    .iter()
+    .cloned()
+    .max()
+    .unwrap_or(60);
+
     let border = "─".repeat(content_width + 2);
 
     println!("┌{}┐", border);
@@ -36,15 +71,14 @@ pub fn print_results_table(results: &[BenchmarkResult], size: usize, iterations:
     if results.is_empty() {
         return;
     }
-    
-    let baseline_time = results.first()
+
+    let baseline_time = results
+        .first()
         .map(|r| r.avg_time.as_nanos() as f64)
         .unwrap_or(1.0);
-    
-    let baseline_result = results.first()
-        .map(|r| r.result_sample)
-        .unwrap_or(0.0);
-    
+
+    let baseline_result = results.first().map(|r| r.result_sample).unwrap_or(0.0);
+
     println!("  Size: {} ({} iterations)", size, iterations);
     println!("    {}", "─".repeat(100));
     println!(
@@ -52,14 +86,18 @@ pub fn print_results_table(results: &[BenchmarkResult], size: usize, iterations:
         "Variant", "Average", "Min", "Max", "Speedup", "CV", "Rel. Error"
     );
     println!("    {}", "─".repeat(100));
-    
+
     for result in results {
         let speedup = baseline_time / result.avg_time.as_nanos() as f64;
-        
+
         let avg_ns = result.avg_time.as_nanos() as f64;
         let std_dev_ns = result.std_dev.as_nanos() as f64;
-        
-        let cv = if avg_ns > 0.0 { std_dev_ns / avg_ns } else { 0.0 };
+
+        let cv = if avg_ns > 0.0 {
+            std_dev_ns / avg_ns
+        } else {
+            0.0
+        };
 
         let diff = (result.result_sample - baseline_result).abs();
         let relative_error = if baseline_result.abs() > 1e-9 {
@@ -123,8 +161,9 @@ pub fn print_available_algorithms(registry: &AlgorithmRegistry) {
     println!("Available algorithms:");
     println!();
     for algo in registry.all() {
-        println!("  {:<20} [{}] - {}", 
-            algo.name(), 
+        println!(
+            "  {:<20} [{}] - {}",
+            algo.name(),
             algo.category(),
             algo.description()
         );
@@ -141,7 +180,7 @@ pub fn run_all_algorithms_randomized(
     csv_path: Option<&str>,
 ) {
     let grouped = runner::run_all_algorithms_randomized(algorithms, sample_sizes, iterations, seed);
-    
+
     // Export CSV if requested
     if let Some(path) = csv_path {
         match runner::export_csv(path, &grouped.raw_data) {
@@ -150,31 +189,29 @@ pub fn run_all_algorithms_randomized(
         }
         println!();
     }
-    
+
     // Display results grouped by algorithm and size
     for (algo_idx, algo) in algorithms.iter().enumerate() {
         print_algo_info_box(*algo);
-        
+
         for (size_idx, &sample_size) in sample_sizes.iter().enumerate() {
-            let variant_results = &grouped.results[algo_idx][size_idx];
-            
+            let mut variant_results = grouped.results[algo_idx][size_idx].clone();
+            sort_variants(&mut variant_results);
+
             if !variant_results.is_empty() {
-                print_results_table(variant_results, sample_size, iterations);
+                print_results_table(&variant_results, sample_size, iterations);
             }
         }
     }
 }
 
 /// Run a single algorithm benchmark and display results
-pub fn run_and_display(
-    algo: &dyn AlgorithmRunner,
-    sample_sizes: &[usize],
-    iterations: usize,
-) {
+pub fn run_and_display(algo: &dyn AlgorithmRunner, sample_sizes: &[usize], iterations: usize) {
     print_algo_info_box(algo);
 
     for &sample_size in sample_sizes {
-        let results = algo.run_benchmarks(sample_size, iterations);
+        let mut results = algo.run_benchmarks(sample_size, iterations);
+        sort_variants(&mut results);
         print_results_table(&results, sample_size, iterations);
     }
 }

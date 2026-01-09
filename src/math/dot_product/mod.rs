@@ -12,13 +12,13 @@
 //! - **Cache optimization**: Ensure sequential memory access patterns
 //! - **FMA**: Use fused multiply-add instructions when available
 
-pub mod code;
 pub mod bench;
+pub mod code;
 pub mod test;
 
 pub use code::*;
 
-use crate::registry::{AlgorithmRunner, BenchmarkResult, BenchmarkClosure};
+use crate::registry::{AlgorithmRunner, BenchmarkClosure, BenchmarkResult};
 use crate::utils::bench::SeededRng;
 use rand::Rng;
 use std::sync::Arc;
@@ -30,41 +30,25 @@ impl AlgorithmRunner for DotProductRunner {
     fn name(&self) -> &'static str {
         "dot_product"
     }
-    
+
     fn description(&self) -> &'static str {
         "Computes the sum of products of corresponding vector elements"
     }
-    
+
     fn category(&self) -> &'static str {
         "math"
     }
-    
+
     fn available_variants(&self) -> Vec<&'static str> {
-        code::available_variants()
-            .iter()
-            .map(|v| v.name)
-            .collect()
+        code::available_variants().iter().map(|v| v.name).collect()
     }
-    
+
     fn run_benchmarks(&self, size: usize, iterations: usize) -> Vec<BenchmarkResult> {
         let mut rng = rand::thread_rng();
         let a: Vec<f32> = (0..size).map(|_| rng.gen_range(-1.0..1.0)).collect();
         let b: Vec<f32> = (0..size).map(|_| rng.gen_range(-1.0..1.0)).collect();
-        
+
         bench::run_all_benchmarks(&a, &b, iterations)
-            .into_iter()
-            .map(|r| BenchmarkResult {
-                variant_name: r.name,
-                description: r.description,
-                avg_time: r.avg_time,
-                min_time: r.min_time,
-                max_time: r.max_time,
-                std_dev: r.std_dev,
-                iterations,
-                result_sample: r.result as f64,
-                compiler: r.compiler,
-            })
-            .collect()
     }
 
     fn verify(&self) -> Result<(), String> {
@@ -73,23 +57,24 @@ impl AlgorithmRunner for DotProductRunner {
         let size = 1023;
         let a: Vec<f32> = (0..size).map(|_| rng.gen_range(-1.0..1.0)).collect();
         let b: Vec<f32> = (0..size).map(|_| rng.gen_range(-1.0..1.0)).collect();
-        
+
         // Find reference implementation (assumed to be named "original")
         let variants = code::available_variants();
-        let original_variant = variants.iter()
+        let original_variant = variants
+            .iter()
             .find(|v| v.name == "original")
             .ok_or("No 'original' variant found for reference")?;
-            
+
         let expected = (original_variant.function)(&a, &b);
-        
+
         for variant in &variants {
             if variant.name == "original" {
                 continue;
             }
-            
+
             let result = (variant.function)(&a, &b);
             let diff = (result - expected).abs();
-            
+
             // Allow small specific tolerance for floating point accumulation differences
             // Dot product accumulation order affects lower bits
             if diff > 1e-4 {
@@ -99,24 +84,24 @@ impl AlgorithmRunner for DotProductRunner {
                 ));
             }
         }
-        
+
         Ok(())
     }
-    
+
     fn get_benchmark_closures(&self, size: usize, seed: u64) -> Vec<BenchmarkClosure> {
         use std::time::Instant;
-        
+
         let mut rng = SeededRng::new(seed);
         let a: Arc<Vec<f32>> = Arc::new((0..size).map(|_| rng.next_f32_range()).collect());
         let b: Arc<Vec<f32>> = Arc::new((0..size).map(|_| rng.next_f32_range()).collect());
-        
+
         code::available_variants()
             .into_iter()
             .map(|v| {
                 let a = Arc::clone(&a);
                 let b = Arc::clone(&b);
                 let func = v.function;
-                
+
                 BenchmarkClosure {
                     name: v.name,
                     description: v.description,
@@ -131,12 +116,12 @@ impl AlgorithmRunner for DotProductRunner {
             })
             .collect()
     }
-    
+
     fn warmup(&self, size: usize, warmup_iterations: usize, seed: u64) {
         let mut rng = SeededRng::new(seed);
         let a: Vec<f32> = (0..size).map(|_| rng.next_f32_range()).collect();
         let b: Vec<f32> = (0..size).map(|_| rng.next_f32_range()).collect();
-        
+
         for v in code::available_variants() {
             for _ in 0..warmup_iterations {
                 std::hint::black_box((v.function)(&a, &b));
