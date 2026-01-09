@@ -1,8 +1,82 @@
 //! Shared benchmark utilities.
 //!
 //! Common functions used by all benchmark modules.
+//!
+//! When the `cpu_cycles` feature is enabled, measurements use CPU cycle
+//! counters instead of wall-clock time for more precise micro-benchmarking.
 
 use std::time::Duration;
+
+// ============================================================================
+// Measurement abstraction: cycles or time depending on feature flag
+// ============================================================================
+
+/// Measurement value type - cycles (u64) or Duration depending on feature
+#[cfg(feature = "cpu_cycles")]
+pub type Measurement = u64;
+
+#[cfg(not(feature = "cpu_cycles"))]
+pub type Measurement = Duration;
+
+/// Read current measurement (cycles or time)
+#[cfg(feature = "cpu_cycles")]
+#[inline(always)]
+pub fn now() -> Measurement {
+    crate::utils::cycles::read_cycles()
+}
+
+#[cfg(not(feature = "cpu_cycles"))]
+#[inline(always)]
+pub fn now() -> std::time::Instant {
+    std::time::Instant::now()
+}
+
+/// Calculate elapsed measurement
+#[cfg(feature = "cpu_cycles")]
+#[inline(always)]
+pub fn elapsed(start: Measurement) -> Measurement {
+    crate::utils::cycles::read_cycles().saturating_sub(start)
+}
+
+#[cfg(not(feature = "cpu_cycles"))]
+#[inline(always)]
+pub fn elapsed(start: std::time::Instant) -> Measurement {
+    start.elapsed()
+}
+
+/// Convert measurement to nanoseconds for display
+#[cfg(feature = "cpu_cycles")]
+pub fn to_nanos(m: Measurement) -> u64 {
+    // Return raw cycles
+    m
+}
+
+#[cfg(not(feature = "cpu_cycles"))]
+pub fn to_nanos(m: Measurement) -> u64 {
+    m.as_nanos() as u64
+}
+
+/// Get the measurement unit name
+#[cfg(feature = "cpu_cycles")]
+pub const fn unit_name() -> &'static str {
+    #[cfg(target_arch = "aarch64")]
+    {
+        "ticks"
+    }
+    #[cfg(target_arch = "x86_64")]
+    {
+        "cycles"
+    }
+    #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
+    {
+        "units"
+    }
+}
+
+#[cfg(not(feature = "cpu_cycles"))]
+pub const fn unit_name() -> &'static str {
+    "ns"
+}
 
 /// Calculate standard deviation from a list of durations
 pub fn calculate_std_dev(times: &[Duration], mean: Duration) -> Duration {

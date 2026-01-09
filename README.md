@@ -174,6 +174,20 @@ Extract and compare the generated assembly for Rust and C implementations:
 
 This is useful for understanding why C with `-ffast-math` auto-vectorizes while Rust preserves IEEE 754 semantics.
 
+### CPU Cycle Counter (Experimental)
+
+For ultra-precise micro-benchmarking, enable the `cpu_cycles` feature:
+
+```bash
+cargo run --release --features cpu_cycles
+```
+
+This uses:
+- **x86_64**: `RDTSC` (CPU timestamp counter)
+- **aarch64**: `CNTVCT_EL0` (virtual timer counter)
+
+> **Note:** The aarch64 counter is a fixed-frequency timer, not actual CPU cycles, but provides consistent measurements across cores.
+
 ## Adding a New Algorithm
 
 1. **Create Directory Structure**:

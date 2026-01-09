@@ -82,7 +82,7 @@ pub fn print_results_table(results: &[BenchmarkResult], size: usize, iterations:
     println!("  Size: {} ({} iterations)", size, iterations);
     println!("    {}", "─".repeat(100));
     println!(
-        "    {:<30} {:>10} {:>10} {:>10} {:>10} {:>12} {:>12}",
+        "    {:<30} {:>15} {:>15} {:>15} {:>10} {:>12} {:>12}",
         "Variant", "Average", "Min", "Max", "Speedup", "CV", "Rel. Error"
     );
     println!("    {}", "─".repeat(100));
@@ -111,12 +111,30 @@ pub fn print_results_table(results: &[BenchmarkResult], size: usize, iterations:
             None => result.variant_name.clone(),
         };
 
+        #[cfg(feature = "cpu_cycles")]
+        let time_str = format!("{} {}", avg_ns as u64, crate::utils::bench::unit_name());
+
+        #[cfg(not(feature = "cpu_cycles"))]
+        let time_str = format!("{:?}", result.avg_time);
+
+        #[cfg(feature = "cpu_cycles")]
+        let (min_str, max_str) = (
+            format!("{}", result.min_time.as_nanos() as u64),
+            format!("{}", result.max_time.as_nanos() as u64),
+        );
+
+        #[cfg(not(feature = "cpu_cycles"))]
+        let (min_str, max_str) = (
+            format!("{:?}", result.min_time),
+            format!("{:?}", result.max_time),
+        );
+
         println!(
-            "    {:<30} {:>10.2?} {:>10.2?} {:>10.2?} {:>9.2}x {:>11.2}% {:>12.2e}",
+            "    {:<30} {:>15} {:>15} {:>15} {:>9.2}x {:>11.2}% {:>12.2e}",
             display_name,
-            result.avg_time,
-            result.min_time,
-            result.max_time,
+            time_str,
+            min_str,
+            max_str,
             speedup,
             cv * 100.0,
             relative_error,

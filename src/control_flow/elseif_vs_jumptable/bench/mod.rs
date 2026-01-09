@@ -2,9 +2,8 @@
 
 use super::code::get_variants;
 use crate::registry::BenchmarkResult;
-use crate::utils::bench::{run_generic_benchmark, timing_to_result};
+use crate::utils::bench::{elapsed, now, run_generic_benchmark, timing_to_result};
 use std::hint::black_box;
-use std::time::Instant;
 
 /// Generate test data - random opcodes (0-7) and values
 fn generate_test_data(size: usize) -> Vec<(u8, u32)> {
@@ -36,7 +35,7 @@ pub fn run_benchmarks(size: usize, iterations: usize) -> Vec<BenchmarkResult> {
             (
                 v.name.to_string(),
                 v.description.to_string(),
-                None::<String>, // No compiler for these variants
+                None::<String>,
                 v.func,
             )
         })
@@ -53,12 +52,19 @@ pub fn run_benchmarks(size: usize, iterations: usize) -> Vec<BenchmarkResult> {
         },
         |func| {
             // Execute and time
-            let start = Instant::now();
+            let start = now();
             let mut last_result = 0u32;
             for &(op, val) in &data {
                 last_result = black_box(func(black_box(op), black_box(val)));
             }
-            (start.elapsed(), last_result as f64)
+            let total = elapsed(start);
+
+            #[cfg(feature = "cpu_cycles")]
+            let duration = std::time::Duration::from_nanos(crate::utils::bench::to_nanos(total));
+            #[cfg(not(feature = "cpu_cycles"))]
+            let duration = total;
+
+            (duration, last_result as f64)
         },
     );
 

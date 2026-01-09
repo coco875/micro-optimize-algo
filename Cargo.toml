@@ -34,3 +34,4 @@ codegen-units = 1
 default = []
 avx2 = []
 c_impl = []
+cpu_cycles = []

@@ -2,9 +2,8 @@
 
 use super::code::available_variants;
 use crate::registry::BenchmarkResult;
-use crate::utils::bench::{run_generic_benchmark, timing_to_result};
+use crate::utils::bench::{elapsed, now, run_generic_benchmark, timing_to_result};
 use std::hint::black_box;
-use std::time::Instant;
 
 /// Run all available variants and return benchmark results
 pub fn run_all_benchmarks(a: &[f32], b: &[f32], iterations: usize) -> Vec<BenchmarkResult> {
@@ -39,12 +38,21 @@ pub fn run_all_benchmarks(a: &[f32], b: &[f32], iterations: usize) -> Vec<Benchm
             }
         },
         |func| {
-            // Execute and time
-            let start = Instant::now();
+            // Execute and time using the abstracted measurement
+            let start = now();
             for _ in 0..iter_per_sample {
                 black_box(func(a, b));
             }
-            let sample_avg = start.elapsed() / iter_per_sample as u32;
+            let total = elapsed(start);
+
+            // Convert to Duration for now (will be refactored when VariantTiming supports Measurement)
+            #[cfg(feature = "cpu_cycles")]
+            let sample_avg = std::time::Duration::from_nanos(
+                crate::utils::bench::to_nanos(total) / iter_per_sample as u64,
+            );
+            #[cfg(not(feature = "cpu_cycles"))]
+            let sample_avg = total / iter_per_sample as u32;
+
             let result = func(a, b) as f64;
             (sample_avg, result)
         },
