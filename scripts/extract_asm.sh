@@ -36,8 +36,40 @@ extract_rust_asm() {
     
     if [ -n "$MAIN_ASM" ]; then
         OUTPUT="$ASM_DIR/${ALGO}_rust_${suffix}.s"
-        grep -A 100 "${ALGO}" "$MAIN_ASM" | head -500 > "$OUTPUT" 2>/dev/null || true
-        echo "  ✓ $OUTPUT ($(wc -l < "$OUTPUT" | tr -d ' ') lines)"
+        
+        # Try to find the specific "original" implementation function
+        # We look for a line starting with _ (symbol) containing algorithm name and "original", ending in colon
+        SYMBOL=$(grep -E "^_.*${ALGO}_original.*:$" "$MAIN_ASM" | head -1 | sed 's/:$//')
+        
+        # Fallback: look for generic algorithm name but exclude drop_in_place/bench
+        if [ -z "$SYMBOL" ]; then
+            SYMBOL=$(grep -E "^_.*${ALGO}.*:$" "$MAIN_ASM" | grep -v "drop_in_place" | grep -v "bench" | head -1 | sed 's/:$//')
+        fi
+        
+        if [ -n "$SYMBOL" ]; then
+            # Extract the function body from label to .cfi_endproc
+            # Escape symbols for awk
+            escaped_sym=$(echo "$SYMBOL" | sed 's/[.[\*^$]/\\\\&/g')
+            
+            awk -v sym="$escaped_sym" '
+                $0 ~ "^"sym":" { found=1 }
+                found { print }
+                found && /^[[:space:]]*\.cfi_endproc/ { exit }
+            ' "$MAIN_ASM" > "$OUTPUT"
+            
+            # Formatting check: if empty, try simple grep
+            if [ ! -s "$OUTPUT" ]; then
+                grep -A 200 "^${SYMBOL}:" "$MAIN_ASM" > "$OUTPUT"
+            fi
+            
+            echo "  ✓ $OUTPUT ($(wc -l < "$OUTPUT" | tr -d ' ') lines)"
+            echo "    (Symbol: $SYMBOL)"
+        else
+            echo "  ⚠ Could not find suitable symbol for ${ALGO} in asm"
+            # Fallback to the old broad grep if nothing matches
+            grep -A 100 "${ALGO}" "$MAIN_ASM" | head -200 > "$OUTPUT" 2>/dev/null || true
+            echo "  ✓ $OUTPUT (fallback extraction)" 
+        fi
     fi
 }
 
