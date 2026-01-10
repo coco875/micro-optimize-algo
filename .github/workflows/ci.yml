@@ -83,4 +83,6 @@ jobs:
           sudo apt-get install -y gcc-aarch64-linux-gnu gcc-i686-linux-gnu
 
       - name: Check build for ${{ matrix.target }}
-        run: cargo check --target ${{ matrix.target }} --no-default-features
+        run: |
+          rustup target add ${{ matrix.target }}
+          cargo check --target ${{ matrix.target }} --no-default-features
