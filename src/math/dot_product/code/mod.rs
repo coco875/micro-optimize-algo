@@ -67,7 +67,6 @@ pub fn available_variants() -> Vec<VariantInfo<fn(&[f32], &[f32]) -> f32>> {
     }
 
     // Add C implementations if available
-    // Add C implementations if available
     if C_IMPL_AVAILABLE {
         // Use the constant exposed by c_impl
 
