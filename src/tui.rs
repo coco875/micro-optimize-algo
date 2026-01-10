@@ -7,11 +7,13 @@ use crate::utils::runner;
 use terminal_size::{terminal_size, Width};
 
 /// Get the current terminal width, defaulting to 100 if detection fails
+/// Get the current terminal width, constrained to a reasonable range
 fn get_term_width() -> usize {
     if let Some((Width(w), _)) = terminal_size() {
-        w as usize
+        // Clamp width to avoid layout issues on very small or very large terminals
+        (w as usize).clamp(40, 200)
     } else {
-        100
+        80 // Safe default
     }
 }
 
@@ -103,12 +105,14 @@ pub fn print_algo_info_box(algo: &dyn AlgorithmRunner) {
     println!();
 }
 
-/// Truncate string with ellipsis if it exceeds width
+/// Truncate string with ellipsis if it exceeds width (character-wise)
 fn truncate(s: &str, width: usize) -> String {
-    if s.len() <= width {
+    if s.chars().count() <= width {
         s.to_string()
     } else {
-        format!("{}...", &s[..width.saturating_sub(3)])
+        let mut result: String = s.chars().take(width.saturating_sub(3)).collect();
+        result.push_str("...");
+        result
     }
 }
 
@@ -119,10 +123,11 @@ pub fn print_results_table(results: &[BenchmarkResult], size: usize, iterations:
     }
 
     let term_width = get_term_width();
-    // Fixed columns width: 15+15+15+10+12+12 = 79 chars + padding spaces ~ 85
-    let fixed_width = 85;
-    let variant_col_width = term_width.saturating_sub(fixed_width).max(20); // Min 20 chars for variant
-    let table_width = variant_col_width + fixed_width;
+    // Compact columns: 12+12+12+9+9+10 = 64 chars + 6 spaces + 2 indent = 72
+    let fixed_width = 72;
+    // Calculate variant width based on remaining space, min 15
+    let variant_col_width = term_width.saturating_sub(fixed_width).max(15);
+    let table_width = variant_col_width + 64 + 6; // variant + columns + spaces
 
     let baseline_time = results
         .first()
@@ -132,9 +137,9 @@ pub fn print_results_table(results: &[BenchmarkResult], size: usize, iterations:
     let baseline_result = results.first().map(|r| r.result_sample).unwrap_or(0.0);
 
     println!("  Size: {} ({} iterations)", size, iterations);
-    println!("    {}", "─".repeat(table_width));
+    println!("  {}", "─".repeat(table_width));
     println!(
-        "    {:<v_width$} {:>15} {:>15} {:>15} {:>10} {:>12} {:>12}",
+        "  {:<v_width$} {:>12} {:>12} {:>12} {:>9} {:>9} {:>10}",
         "Variant",
         "Average",
         "Min",
@@ -144,7 +149,7 @@ pub fn print_results_table(results: &[BenchmarkResult], size: usize, iterations:
         "Rel. Error",
         v_width = variant_col_width
     );
-    println!("    {}", "─".repeat(table_width));
+    println!("  {}", "─".repeat(table_width));
 
     for result in results {
         let speedup = baseline_time / result.avg_time.as_nanos() as f64;
@@ -194,7 +199,7 @@ pub fn print_results_table(results: &[BenchmarkResult], size: usize, iterations:
         );
 
         println!(
-            "    {:<v_width$} {:>15} {:>15} {:>15} {:>9.2}x {:>11.2}% {:>12.2e}",
+            "  {:<v_width$} {:>12} {:>12} {:>12} {:>8.2}x {:>8.2}% {:>10.2e}",
             truncate(&display_name, variant_col_width),
             time_str,
             min_str,
@@ -213,6 +218,7 @@ pub fn print_header() {
     let term_width = get_term_width().min(80); // Cap header at 80
     let title = " Micro-Optimize-Algo Benchmarks ";
     let padding = term_width.saturating_sub(title.len() + 2) / 2;
+    let right_padding = term_width.saturating_sub(padding + title.len());
 
     let border = "═".repeat(term_width);
 
@@ -221,7 +227,7 @@ pub fn print_header() {
         "║{}{}{}║",
         " ".repeat(padding),
         title,
-        " ".repeat(term_width - padding - title.len())
+        " ".repeat(right_padding)
     );
     println!("╚{}╝", border);
     println!();
