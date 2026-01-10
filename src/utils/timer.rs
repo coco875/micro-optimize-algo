@@ -4,9 +4,13 @@
 //! - Adaptive batching to handle very fast operations
 //! - All raw measurements preserved for external analysis
 //! - Support for large iteration counts
+//! - CPU core pinning for stable TSC measurements
 
 use std::hint::black_box;
 use std::time::{Duration, Instant};
+
+// Re-export CPU affinity utilities for convenience
+pub use super::cpu_affinity::{CpuPinGuard, pin_to_current_core, unpin};
 
 /// Configuration for timing measurements
 #[derive(Clone, Debug)]
@@ -113,15 +117,18 @@ where
     // Calculate number of samples
     let num_samples = (total_iterations / batch_size).max(config.min_samples);
 
-    // Collect samples
+    // Collect samples - pin to CPU core for stable TSC measurements
     let mut raw_batch_times: Vec<Duration> = Vec::with_capacity(num_samples);
 
     for _ in 0..num_samples {
+        // Pin only during the actual measurement to keep TSC consistent
+        let _pin = CpuPinGuard::new();
         let start = Instant::now();
         for _ in 0..batch_size {
             black_box(func());
         }
         raw_batch_times.push(start.elapsed());
+        // Thread unpinned here when _pin drops, allowing OS to manage freely
     }
 
     // Convert batch times to per-iteration times

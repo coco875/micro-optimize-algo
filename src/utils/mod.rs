@@ -1,6 +1,7 @@
 //! Utility modules for benchmarking and execution.
 
 pub mod bench;
+pub mod cpu_affinity;
 pub mod runner;
 pub mod timer;
 
@@ -11,6 +12,7 @@ pub mod cycles;
 pub use bench::{
     calculate_std_dev, compute_stats, shuffle, shuffle_with_rng, time_seed, SeededRng,
 };
+pub use cpu_affinity::CpuPinGuard;
 pub use runner::run_all_algorithms_randomized;
 pub use timer::{
     calculate_median, calibrate, measure, measure_batched, TimingConfig, TimingResult,
