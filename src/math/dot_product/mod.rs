@@ -44,19 +44,19 @@ impl AlgorithmRunner for DotProductRunner {
     }
 
     fn run_benchmarks(&self, size: usize, iterations: usize) -> Vec<BenchmarkResult> {
-        let mut rng = rand::thread_rng();
-        let a: Vec<f32> = (0..size).map(|_| rng.gen_range(-1.0..1.0)).collect();
-        let b: Vec<f32> = (0..size).map(|_| rng.gen_range(-1.0..1.0)).collect();
+        let mut rng = rand::rng();
+        let a: Vec<f32> = (0..size).map(|_| rng.random_range(-1.0..1.0)).collect();
+        let b: Vec<f32> = (0..size).map(|_| rng.random_range(-1.0..1.0)).collect();
 
         bench::run_all_benchmarks(&a, &b, iterations)
     }
 
     fn verify(&self) -> Result<(), String> {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         // Use a non-aligned size to test edge cases
         let size = 1023;
-        let a: Vec<f32> = (0..size).map(|_| rng.gen_range(-1.0..1.0)).collect();
-        let b: Vec<f32> = (0..size).map(|_| rng.gen_range(-1.0..1.0)).collect();
+        let a: Vec<f32> = (0..size).map(|_| rng.random_range(-1.0..1.0)).collect();
+        let b: Vec<f32> = (0..size).map(|_| rng.random_range(-1.0..1.0)).collect();
 
         // Find reference implementation (assumed to be named "original")
         let variants = code::available_variants();

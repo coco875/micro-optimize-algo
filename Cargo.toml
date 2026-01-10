@@ -16,9 +16,9 @@ name = "micro-algo"
 path = "src/bin/all.rs"
 
 [dependencies]
-rand = "0.8"
+rand = "0.9"
 libc = "0.2"
-terminal_size = "0.3"
+terminal_size = "0.4"
 
 [build-dependencies]
 cc = "1.0"
