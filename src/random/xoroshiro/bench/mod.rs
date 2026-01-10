@@ -28,7 +28,7 @@ pub fn run_all_benchmarks(size: usize, iterations: usize) -> Vec<BenchmarkResult
             // Warmup
             let mut s0: u64 = 123456789;
             let mut s1: u64 = 987654321;
-            for _ in 0..(iterations / 10).max(5).min(100) {
+            for _ in 0..(iterations / 10).clamp(5, 100) {
                 for _ in 0..size {
                     black_box(func(&mut s0, &mut s1));
                 }

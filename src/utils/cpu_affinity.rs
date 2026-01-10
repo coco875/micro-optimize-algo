@@ -196,7 +196,7 @@ mod platform {
             let mut info: SYSTEM_INFO = std::mem::zeroed();
             GetSystemInfo(&mut info);
             let all_cores = info.dwActiveProcessorMask;
-            
+
             let old_mask = SetThreadAffinityMask(handle, all_cores);
             if old_mask != 0 {
                 // Restore immediately to get the value
@@ -239,11 +239,21 @@ mod platform {
 
 #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
 mod platform {
-    pub fn get_core_ids() -> Option<Vec<usize>> { None }
-    pub fn get_current_cpu() -> Option<usize> { None }
-    pub fn save_affinity() -> bool { true }
-    pub fn set_affinity(_core_id: usize) -> bool { false }
-    pub fn restore_affinity() -> bool { true }
+    pub fn get_core_ids() -> Option<Vec<usize>> {
+        None
+    }
+    pub fn get_current_cpu() -> Option<usize> {
+        None
+    }
+    pub fn save_affinity() -> bool {
+        true
+    }
+    pub fn set_affinity(_core_id: usize) -> bool {
+        false
+    }
+    pub fn restore_affinity() -> bool {
+        true
+    }
 }
 
 // ============================================================================

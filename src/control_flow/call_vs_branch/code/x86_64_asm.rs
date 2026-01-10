@@ -67,51 +67,51 @@ use std::arch::asm;
 #[inline(never)]
 pub fn process_with_calls(value: u32) -> u32 {
     let result: u32;
-    
+
     unsafe {
         asm!(
             // Main function body
             "mov {val:e}, {input:e}",
-            
+
             // Call "double" subroutine
             "call 20f",
-            
-            // Call "add_ten" subroutine  
+
+            // Call "add_ten" subroutine
             "call 30f",
-            
+
             // Call "square" subroutine
             "call 40f",
-            
+
             // Done - result is in val
             "jmp 99f",
-            
+
             // === Subroutine: double ===
             // Input: val, Output: val = val * 2
             "20:",
             "add {val:e}, {val:e}",
             "ret",
-            
+
             // === Subroutine: add_ten ===
             // Input: val, Output: val = val + 10
             "30:",
             "add {val:e}, 10",
             "ret",
-            
+
             // === Subroutine: square ===
             // Input: val, Output: val = val * val
             "40:",
             "imul {val:e}, {val:e}",
             "ret",
-            
+
             // === End ===
             "99:",
-            
+
             input = in(reg) value,
             val = out(reg) result,
             options(nostack),
         );
     }
-    
+
     result
 }
 
@@ -121,25 +121,25 @@ pub fn process_with_calls(value: u32) -> u32 {
 #[inline(never)]
 pub fn process_inline(value: u32) -> u32 {
     let result: u32;
-    
+
     unsafe {
         asm!(
             // Step 1: double (val * 2)
             "mov {val:e}, {input:e}",
             "add {val:e}, {val:e}",
-            
+
             // Step 2: add_ten (val + 10)
             "add {val:e}, 10",
-            
+
             // Step 3: square (val * val)
             "imul {val:e}, {val:e}",
-            
+
             input = in(reg) value,
             val = out(reg) result,
             options(nostack, nomem, pure),
         );
     }
-    
+
     result
 }
 
@@ -169,51 +169,51 @@ pub fn process_inline(value: u32) -> u32 {
 #[inline(never)]
 pub fn process_with_branch(value: u32) -> u32 {
     let result: u32;
-    
+
     unsafe {
         asm!(
             // Main function body
             "mov {val:e}, {input:e}",
-            
+
             // Jump to "double" code block
             "jmp 20f",
             "21:",  // Return point after double
-            
+
             // Jump to "add_ten" code block
             "jmp 30f",
             "31:",  // Return point after add_ten
-            
+
             // Jump to "square" code block
             "jmp 40f",
             "41:",  // Return point after square
-            
+
             // Done - result is in val
             "jmp 99f",
-            
+
             // === Code block: double ===
             "20:",
             "add {val:e}, {val:e}",
             "jmp 21b",  // Branch back (unconditional jump)
-            
+
             // === Code block: add_ten ===
             "30:",
             "add {val:e}, 10",
             "jmp 31b",  // Branch back
-            
+
             // === Code block: square ===
             "40:",
             "imul {val:e}, {val:e}",
             "jmp 41b",  // Branch back
-            
+
             // === End ===
             "99:",
-            
+
             input = in(reg) value,
             val = out(reg) result,
             options(nostack, nomem),
         );
     }
-    
+
     result
 }
 
@@ -222,18 +222,19 @@ mod tests {
     use super::*;
 
     fn expected_result(value: u32) -> u32 {
-        let step1 = value.wrapping_mul(2);      // double
-        let step2 = step1.wrapping_add(10);     // add_ten
-        step2.wrapping_mul(step2)               // square
+        let step1 = value.wrapping_mul(2); // double
+        let step2 = step1.wrapping_add(10); // add_ten
+        step2.wrapping_mul(step2) // square
     }
 
     #[test]
     fn test_process_with_calls() {
         for v in [0, 1, 5, 10, 100, 1000] {
             assert_eq!(
-                process_with_calls(v), 
+                process_with_calls(v),
                 expected_result(v),
-                "process_with_calls({}) failed", v
+                "process_with_calls({}) failed",
+                v
             );
         }
     }
@@ -242,9 +243,10 @@ mod tests {
     fn test_process_inline() {
         for v in [0, 1, 5, 10, 100, 1000] {
             assert_eq!(
-                process_inline(v), 
+                process_inline(v),
                 expected_result(v),
-                "process_inline({}) failed", v
+                "process_inline({}) failed",
+                v
             );
         }
     }
@@ -253,9 +255,10 @@ mod tests {
     fn test_process_with_branch() {
         for v in [0, 1, 5, 10, 100, 1000] {
             assert_eq!(
-                process_with_branch(v), 
+                process_with_branch(v),
                 expected_result(v),
-                "process_with_branch({}) failed", v
+                "process_with_branch({}) failed",
+                v
             );
         }
     }
@@ -264,9 +267,24 @@ mod tests {
     fn test_all_match() {
         for v in 0..1000 {
             let expected = expected_result(v);
-            assert_eq!(process_with_calls(v), expected, "process_with_calls mismatch for {}", v);
-            assert_eq!(process_with_branch(v), expected, "process_with_branch mismatch for {}", v);
-            assert_eq!(process_inline(v), expected, "process_inline mismatch for {}", v);
+            assert_eq!(
+                process_with_calls(v),
+                expected,
+                "process_with_calls mismatch for {}",
+                v
+            );
+            assert_eq!(
+                process_with_branch(v),
+                expected,
+                "process_with_branch mismatch for {}",
+                v
+            );
+            assert_eq!(
+                process_inline(v),
+                expected,
+                "process_inline mismatch for {}",
+                v
+            );
         }
     }
 }

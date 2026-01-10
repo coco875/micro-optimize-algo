@@ -10,7 +10,7 @@ use std::hint::black_box;
 use std::time::{Duration, Instant};
 
 // Re-export CPU affinity utilities for convenience
-pub use super::cpu_affinity::{CpuPinGuard, pin_to_current_core, unpin};
+pub use super::cpu_affinity::{pin_to_current_core, unpin, CpuPinGuard};
 
 /// Configuration for timing measurements
 #[derive(Clone, Debug)]

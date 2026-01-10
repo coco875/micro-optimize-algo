@@ -10,8 +10,11 @@ pub mod c_impl;
 
 use crate::utils::VariantInfo;
 
-pub fn available_variants() -> Vec<VariantInfo<fn(&mut u64, &mut u64) -> u64>> {
-    let mut variants: Vec<VariantInfo<fn(&mut u64, &mut u64) -> u64>> = vec![VariantInfo {
+/// Type alias for xoroshiro function signature
+pub type XoroshiroFn = fn(&mut u64, &mut u64) -> u64;
+
+pub fn available_variants() -> Vec<VariantInfo<XoroshiroFn>> {
+    let mut variants: Vec<VariantInfo<XoroshiroFn>> = vec![VariantInfo {
         name: "original",
         function: original::xoroshiro_original,
         description: "Original pure Rust implementation",

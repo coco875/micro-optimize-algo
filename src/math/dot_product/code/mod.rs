@@ -33,9 +33,12 @@ pub trait DotProduct {
 
 use crate::utils::VariantInfo;
 
+/// Type alias for dot product function signature
+pub type DotProductFn = fn(&[f32], &[f32]) -> f32;
+
 /// Get all available variants for the current CPU
-pub fn available_variants() -> Vec<VariantInfo<fn(&[f32], &[f32]) -> f32>> {
-    let mut variants: Vec<VariantInfo<fn(&[f32], &[f32]) -> f32>> = vec![
+pub fn available_variants() -> Vec<VariantInfo<DotProductFn>> {
+    let mut variants: Vec<VariantInfo<DotProductFn>> = vec![
         VariantInfo {
             name: "original",
             description: "Clean, idiomatic Rust reference implementation",

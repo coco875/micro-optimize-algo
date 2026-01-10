@@ -88,7 +88,6 @@ impl AlgorithmRunner for XoroshiroRunner {
                 // Each closure has its own RNG state derived from seed
                 let state0 = RefCell::new(seed);
                 let state1 = RefCell::new(seed.wrapping_mul(0xDEADBEEF));
-                let size = size;
 
                 BenchmarkClosure {
                     name: v.name,
@@ -100,7 +99,7 @@ impl AlgorithmRunner for XoroshiroRunner {
 
                         let start = Instant::now();
                         for _ in 0..size {
-                            result = func(&mut *s0, &mut *s1);
+                            result = func(&mut s0, &mut s1);
                             black_box(result);
                         }
                         let elapsed = start.elapsed();

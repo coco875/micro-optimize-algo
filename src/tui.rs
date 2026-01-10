@@ -50,7 +50,7 @@ fn variant_sort_key(result: &BenchmarkResult) -> (u8, String, String) {
 
 /// Sort variants: original first, then grouped by language (Rust, C, ASM)
 fn sort_variants(results: &mut [BenchmarkResult]) {
-    results.sort_by(|a, b| variant_sort_key(a).cmp(&variant_sort_key(b)));
+    results.sort_by_key(variant_sort_key);
 }
 
 /// Print algorithm info box

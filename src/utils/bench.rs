@@ -3,7 +3,7 @@
 //! Common functions used by all benchmark modules.
 //!
 //! By default (`cpu_cycles` feature), measurements use CPU cycle counters
-//! for precise micro-benchmarking. Use `--features use_time` or 
+//! for precise micro-benchmarking. Use `--features use_time` or
 //! `--no-default-features` to use wall-clock time instead.
 
 use std::time::Duration;

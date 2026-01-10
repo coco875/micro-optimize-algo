@@ -66,19 +66,19 @@ pub fn dispatch_branch(opcode: u8, value: u32) -> u32 {
     let result: u32;
     // Zero-extend opcode to u32 before passing to asm
     let opcode_ext = opcode as u32;
-    
+
     unsafe {
         asm!(
             // Bounds check first
             "cmp {opcode:e}, 7",
             "ja 90f",                    // BRANCH: If > 7, jump to invalid handler
-            
+
             // Case 0: identity - BRANCH
             "test {opcode:e}, {opcode:e}",
             "jnz 20f",                   // BRANCH: Jump if not zero
             "mov {result:e}, {value:e}",
             "jmp 99f",                   // Unconditional jump
-            
+
             // Check remaining cases with BRANCHES
             "20:",
             "cmp {opcode:e}, 2",
@@ -96,29 +96,29 @@ pub fn dispatch_branch(opcode: u8, value: u32) -> u32 {
             // Must be case 1 (already checked 0, 2-7 above)
             "lea {result:e}, [{value:e} + {value:e}]",  // ×2
             "jmp 99f",
-            
+
             // Case 2: ×3
             "30:",
             "lea {result:e}, [{value:e} + {value:e}*2]",
             "jmp 99f",
-            
+
             // Case 3: ×4
             "40:",
             "shl {value:e}, 2",
             "mov {result:e}, {value:e}",
             "jmp 99f",
-            
+
             // Case 4: ×5
             "50:",
             "lea {result:e}, [{value:e} + {value:e}*4]",
             "jmp 99f",
-            
+
             // Case 5: ×6
             "60:",
             "lea {result:e}, [{value:e} + {value:e}*2]",
             "add {result:e}, {result:e}",
             "jmp 99f",
-            
+
             // Case 6: ×7
             "70:",
             "mov {result:e}, {value:e}",
@@ -126,26 +126,26 @@ pub fn dispatch_branch(opcode: u8, value: u32) -> u32 {
             "sub {value:e}, {result:e}",
             "mov {result:e}, {value:e}",
             "jmp 99f",
-            
+
             // Case 7: ×8
             "80:",
             "shl {value:e}, 3",
             "mov {result:e}, {value:e}",
             "jmp 99f",
-            
+
             // Invalid opcode
             "90:",
             "xor {result:e}, {result:e}",
-            
+
             "99:",
-            
+
             opcode = in(reg) opcode_ext,
             value = in(reg) value,
             result = out(reg) result,
             options(nostack, nomem),
         );
     }
-    
+
     result
 }
 
@@ -179,26 +179,26 @@ pub fn dispatch_branch(opcode: u8, value: u32) -> u32 {
 pub fn dispatch_jumptable(opcode: u8, value: u32) -> u32 {
     let result: u32;
     let opcode_ext = opcode as u32;
-    
+
     unsafe {
         asm!(
             // Bounds check
             "cmp {opcode:e}, 7",
             "ja 92f",                      // If > 7, jump to invalid handler
-            
+
             // === JUMP TABLE DISPATCH ===
             // Load base address of jump table (RIP-relative)
             "lea {base}, [rip + 500f]",
-            
+
             // Load 32-bit signed offset from table: offset = table[opcode]
             "movsxd {offset}, dword ptr [{base} + {opcode:r}*4]",
-            
+
             // Compute absolute target address: target = base + offset
             "add {base}, {offset}",
-            
+
             // Indirect jump to computed address
             "jmp {base}",
-            
+
             // === JUMP TABLE DATA (8 entries × 4 bytes = 32 bytes) ===
             // Each entry is the offset from the table base to the case handler
             ".p2align 2",                   // Align to 4 bytes
@@ -211,40 +211,40 @@ pub fn dispatch_jumptable(opcode: u8, value: u32) -> u32 {
             ".long 620f - 500b",            // case 5: offset to label 620
             ".long 622f - 500b",            // case 6: offset to label 622
             ".long 624f - 500b",            // case 7: offset to label 624
-            
+
             // === CASE HANDLERS ===
             // Case 0: result = value * 1 (identity)
             "600:",
             "mov {result:e}, {value:e}",
             "jmp 99f",
-            
+
             // Case 1: result = value * 2
             "602:",
             "lea {result:e}, [{value:e} + {value:e}]",
             "jmp 99f",
-            
+
             // Case 2: result = value * 3
             "604:",
             "lea {result:e}, [{value:e} + {value:e}*2]",
             "jmp 99f",
-            
+
             // Case 3: result = value * 4
             "606:",
             "mov {result:e}, {value:e}",
             "shl {result:e}, 2",
             "jmp 99f",
-            
+
             // Case 4: result = value * 5
             "608:",
             "lea {result:e}, [{value:e} + {value:e}*4]",
             "jmp 99f",
-            
+
             // Case 5: result = value * 6
             "620:",
             "lea {result:e}, [{value:e} + {value:e}*2]",
             "add {result:e}, {result:e}",
             "jmp 99f",
-            
+
             // Case 6: result = value * 7 (8 - 1)
             "622:",
             "mov {result:e}, {value:e}",
@@ -252,20 +252,20 @@ pub fn dispatch_jumptable(opcode: u8, value: u32) -> u32 {
             "sub {value:e}, {result:e}",
             "mov {result:e}, {value:e}",
             "jmp 99f",
-            
+
             // Case 7: result = value * 8
             "624:",
             "mov {result:e}, {value:e}",
             "shl {result:e}, 3",
             "jmp 99f",
-            
+
             // Invalid opcode handler
             "92:",
             "xor {result:e}, {result:e}",
-            
+
             // Done
             "99:",
-            
+
             opcode = in(reg) opcode_ext,
             value = in(reg) value,
             result = out(reg) result,
@@ -274,7 +274,7 @@ pub fn dispatch_jumptable(opcode: u8, value: u32) -> u32 {
             options(nostack, nomem),
         );
     }
-    
+
     result
 }
 
@@ -287,10 +287,10 @@ pub fn dispatch_jumptable(opcode: u8, value: u32) -> u32 {
 pub fn dispatch_branchless(opcode: u8, value: u32) -> u32 {
     // Use lookup table approach for branchless - simplest and fastest
     static MULTIPLIERS: [u32; 8] = [1, 2, 3, 4, 5, 6, 7, 8];
-    
+
     let result: u32;
     let opcode_ext = opcode as u32;
-    
+
     unsafe {
         asm!(
             // First, clamp opcode to valid range (0-7) to avoid out-of-bounds read
@@ -299,22 +299,22 @@ pub fn dispatch_branchless(opcode: u8, value: u32) -> u32 {
             "cmp {opcode:e}, 7",
             "mov {tmp:e}, 0",
             "cmova {idx:e}, {tmp:e}",   // If opcode > 7, idx = 0 (branchless!)
-            
+
             // Load multiplier from table using clamped index
             "mov {mult:e}, [{table} + {idx:r}*4]",
-            
+
             // Compute result = value * multiplier
             "imul {result:e}, {value:e}, 1",
             "imul {result:e}, {mult:e}",
-            
+
             // Redo the comparison since IMUL clobbered the flags
             "cmp {opcode:e}, 7",
-            
+
             // If opcode was invalid (> 7), zero the result
             // cmova = conditional move if above (CF=0 and ZF=0)
             "mov {tmp:e}, 0",
             "cmova {result:e}, {tmp:e}",  // If opcode > 7, result = 0 (branchless!)
-            
+
             opcode = in(reg) opcode_ext,
             value = in(reg) value,
             table = in(reg) MULTIPLIERS.as_ptr(),
@@ -325,7 +325,7 @@ pub fn dispatch_branchless(opcode: u8, value: u32) -> u32 {
             options(nostack, readonly),
         );
     }
-    
+
     result
 }
 

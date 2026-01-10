@@ -21,10 +21,10 @@ pub fn xoroshiro_x86_64_asm(seed_lo_ptr: &mut u64, seed_hi_ptr: &mut u64) -> u64
             // Line 8: lea rax, [s0 + s1] -> n = s0 + s1
             // Line 12: rol rax, 17 -> n = rotl(n, 17)
             // Line 14: add rax, {copy_seed_lo} -> n = n + s0. Correct.
-            
+
             "xor {seed_lo}, r8", // seed_lo ^= (hi << 21) // b ^= c in diagram?
             "rol {seed_hi}, 28", // seed_hi = rol(seed_hi, 28)
-            
+
             seed_lo = inout(reg) seed_lo,
             seed_hi = inout(reg) seed_hi,
             out("rax") n,

@@ -28,10 +28,9 @@ fn square(x: u32) -> u32 {
 /// Each step is a separate function call with CALL/RET overhead.
 #[inline(never)]
 pub fn process_with_calls(value: u32) -> u32 {
-    let step1 = double(value);     // CALL double, RET
-    let step2 = add_ten(step1);    // CALL add_ten, RET
-    let step3 = square(step2);     // CALL square, RET
-    step3
+    let step1 = double(value); // CALL double, RET
+    let step2 = add_ten(step1); // CALL add_ten, RET
+    square(step2) // CALL square, RET
 }
 
 /// Process a value with everything inlined (for comparison reference)
@@ -39,6 +38,5 @@ pub fn process_with_calls(value: u32) -> u32 {
 pub fn process_inline(value: u32) -> u32 {
     let step1 = value * 2;
     let step2 = step1 + 10;
-    let step3 = step2.wrapping_mul(step2);
-    step3
+    step2.wrapping_mul(step2)
 }

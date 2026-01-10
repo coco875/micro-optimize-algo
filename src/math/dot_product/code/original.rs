@@ -15,7 +15,7 @@
 /// # Example
 /// ```
 /// use micro_optimize_algo::math::dot_product::dot_product_original;
-/// 
+///
 /// let a = [1.0, 2.0, 3.0];
 /// let b = [4.0, 5.0, 6.0];
 /// let result = dot_product_original(&a, &b);
@@ -23,9 +23,6 @@
 /// ```
 pub fn dot_product_original(a: &[f32], b: &[f32]) -> f32 {
     assert_eq!(a.len(), b.len(), "Vectors must have the same length");
-    
-    a.iter()
-        .zip(b.iter())
-        .map(|(x, y)| x * y)
-        .sum()
+
+    a.iter().zip(b.iter()).map(|(x, y)| x * y).sum()
 }
