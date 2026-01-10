@@ -2,62 +2,66 @@
 //!
 //! Common functions used by all benchmark modules.
 //!
-//! When the `cpu_cycles` feature is enabled, measurements use CPU cycle
-//! counters instead of wall-clock time for more precise micro-benchmarking.
+//! By default (`cpu_cycles` feature), measurements use CPU cycle counters
+//! for precise micro-benchmarking. Use `--features use_time` or 
+//! `--no-default-features` to use wall-clock time instead.
 
 use std::time::Duration;
 
 // ============================================================================
-// Measurement abstraction: cycles or time depending on feature flag
+// Measurement abstraction: cycles or time depending on feature flags
 // ============================================================================
+//
+// Use CPU cycles if: cpu_cycles is enabled AND use_time is NOT enabled
+// Use wall-clock time if: use_time is enabled OR cpu_cycles is disabled
 
 /// Measurement value type - cycles (u64) or Duration depending on feature
-#[cfg(feature = "cpu_cycles")]
+#[cfg(all(feature = "cpu_cycles", not(feature = "use_time")))]
 pub type Measurement = u64;
 
-#[cfg(not(feature = "cpu_cycles"))]
+#[cfg(any(not(feature = "cpu_cycles"), feature = "use_time"))]
 pub type Measurement = Duration;
 
 /// Read current measurement (cycles or time)
-#[cfg(feature = "cpu_cycles")]
+#[cfg(all(feature = "cpu_cycles", not(feature = "use_time")))]
 #[inline(always)]
 pub fn now() -> Measurement {
     crate::utils::cycles::read_cycles()
 }
 
-#[cfg(not(feature = "cpu_cycles"))]
+#[cfg(any(not(feature = "cpu_cycles"), feature = "use_time"))]
 #[inline(always)]
 pub fn now() -> std::time::Instant {
     std::time::Instant::now()
 }
 
 /// Calculate elapsed measurement
-#[cfg(feature = "cpu_cycles")]
+#[cfg(all(feature = "cpu_cycles", not(feature = "use_time")))]
 #[inline(always)]
 pub fn elapsed(start: Measurement) -> Measurement {
     crate::utils::cycles::read_cycles().saturating_sub(start)
 }
 
-#[cfg(not(feature = "cpu_cycles"))]
+#[cfg(any(not(feature = "cpu_cycles"), feature = "use_time"))]
 #[inline(always)]
 pub fn elapsed(start: std::time::Instant) -> Measurement {
     start.elapsed()
 }
 
 /// Convert measurement to nanoseconds for display
-#[cfg(feature = "cpu_cycles")]
+#[cfg(all(feature = "cpu_cycles", not(feature = "use_time")))]
 pub fn to_nanos(m: Measurement) -> u64 {
     // Return raw cycles
     m
 }
 
-#[cfg(not(feature = "cpu_cycles"))]
+#[cfg(any(not(feature = "cpu_cycles"), feature = "use_time"))]
 pub fn to_nanos(m: Measurement) -> u64 {
     m.as_nanos() as u64
 }
 
 /// Get the measurement unit name
-#[cfg(feature = "cpu_cycles")]
+#[cfg(all(feature = "cpu_cycles", not(feature = "use_time")))]
 pub const fn unit_name() -> &'static str {
     #[cfg(target_arch = "aarch64")]
     {
@@ -73,7 +77,7 @@ pub const fn unit_name() -> &'static str {
     }
 }
 
-#[cfg(not(feature = "cpu_cycles"))]
+#[cfg(any(not(feature = "cpu_cycles"), feature = "use_time"))]
 pub const fn unit_name() -> &'static str {
     "ns"
 }

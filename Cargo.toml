@@ -32,7 +32,11 @@ lto = true
 codegen-units = 1
 
 [features]
-default = []
+# cpu_cycles is enabled by default for precise micro-benchmarking
+# To disable: --no-default-features or use the 'use_time' feature instead
+default = ["cpu_cycles"]
 avx2 = []
 c_impl = []
 cpu_cycles = []
+# Use wall-clock time instead of CPU cycles (disables cpu_cycles)
+use_time = []

@@ -52,9 +52,9 @@ pub fn run_benchmarks(size: usize, iterations: usize) -> Vec<BenchmarkResult> {
             }
             let total = elapsed(start);
 
-            #[cfg(feature = "cpu_cycles")]
+            #[cfg(all(feature = "cpu_cycles", not(feature = "use_time")))]
             let duration = std::time::Duration::from_nanos(crate::utils::bench::to_nanos(total));
-            #[cfg(not(feature = "cpu_cycles"))]
+            #[cfg(any(not(feature = "cpu_cycles"), feature = "use_time"))]
             let duration = total;
 
             (duration, last_result as f64)

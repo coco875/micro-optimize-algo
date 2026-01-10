@@ -5,7 +5,7 @@ pub mod cpu_affinity;
 pub mod runner;
 pub mod timer;
 
-#[cfg(feature = "cpu_cycles")]
+#[cfg(all(feature = "cpu_cycles", not(feature = "use_time")))]
 pub mod cycles;
 
 // Re-export commonly used items
@@ -18,9 +18,9 @@ pub use timer::{
     calculate_median, calibrate, measure, measure_batched, TimingConfig, TimingResult,
 };
 
-#[cfg(not(feature = "cpu_cycles"))]
+#[cfg(any(not(feature = "cpu_cycles"), feature = "use_time"))]
 pub use bench::{elapsed, now};
-#[cfg(feature = "cpu_cycles")]
+#[cfg(all(feature = "cpu_cycles", not(feature = "use_time")))]
 pub use cycles::{measure_cycles, read_cycles};
 
 /// C compiler name detected at build time

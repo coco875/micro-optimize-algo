@@ -180,19 +180,19 @@ pub fn print_results_table(results: &[BenchmarkResult], size: usize, iterations:
                 result.variant_name.clone()
             };
 
-        #[cfg(feature = "cpu_cycles")]
+        #[cfg(all(feature = "cpu_cycles", not(feature = "use_time")))]
         let time_str = format!("{} {}", avg_ns as u64, crate::utils::bench::unit_name());
 
-        #[cfg(not(feature = "cpu_cycles"))]
+        #[cfg(any(not(feature = "cpu_cycles"), feature = "use_time"))]
         let time_str = format!("{:?}", result.avg_time);
 
-        #[cfg(feature = "cpu_cycles")]
+        #[cfg(all(feature = "cpu_cycles", not(feature = "use_time")))]
         let (min_str, max_str) = (
             format!("{}", result.min_time.as_nanos() as u64),
             format!("{}", result.max_time.as_nanos() as u64),
         );
 
-        #[cfg(not(feature = "cpu_cycles"))]
+        #[cfg(any(not(feature = "cpu_cycles"), feature = "use_time"))]
         let (min_str, max_str) = (
             format!("{:?}", result.min_time),
             format!("{:?}", result.max_time),
