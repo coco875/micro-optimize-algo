@@ -14,6 +14,9 @@ pub use utils::tui;
 /// Re-export run_benchmarks from utils::runner
 pub use utils::runner::run_benchmarks;
 
+/// Re-export PinStrategy from utils::timer
+pub use utils::timer::PinStrategy;
+
 /// Re-export commonly used items
 pub mod prelude {
     pub use crate::math::dot_product;

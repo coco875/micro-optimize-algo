@@ -91,10 +91,12 @@ cargo run --release -- --list
 |--------|-------------|---------|
 | `--list`, `-l` | List all available algorithms | - |
 | `--help`, `-h` | Show help message | - |
-| `--sizes SIZES` | Comma-separated vector sizes | `64,256,1024,4096,16384` |
-| `--iter N` | Number of iterations per benchmark | `10000` |
+| `--sizes SIZES` | Comma-separated input sizes | `64,256,1024,4096,16384` |
+| `--iter`, `--runs`, `-r` | Number of runs per variant | `30` |
 | `--seed N` | Random seed for reproducible runs | Time-based |
-| `--csv FILE` | Export raw timing data to CSV file | - |
+| `--csv FILE` | Export timing data to CSV file | - |
+| `--filter`, `-f` | Enable outlier filtering (trim 1% extremes) | Disabled |
+| `--pin MODE` | CPU pin strategy: `global` or `per-call` | `per-call` |
 | `ALGORITHM` | Run only the specified algorithm | All algorithms |
 
 ### Examples
@@ -121,13 +123,13 @@ cargo run --release -- dot_product --iter 5000
 
 ### CSV Export Format
 
-The `--csv` option exports all individual timing measurements:
+The `--csv` option exports aggregated timing data (averages):
 
 ```csv
-algorithm,variant,compiler,size,iteration,time_ns,result
-dot_product,original,,64,0,44,-1.537
-dot_product,original,,64,1,43,-1.537
-dot_product,c-original,GCC,64,0,38,-1.537
+algorithm,variant,compiler,input_size,avg_time_ns,result
+dot_product,original,,64,44,-1.537
+dot_product,x86_64-avx2,,64,28,-1.537
+dot_product,c-original,GCC,64,38,-1.537
 ...
 ```
 
@@ -136,10 +138,9 @@ dot_product,c-original,GCC,64,0,38,-1.537
 | `algorithm` | Algorithm name |
 | `variant` | Implementation variant |
 | `compiler` | Compiler used (GCC, etc.) or empty for Rust |
-| `size` | Input size |
-| `iteration` | Iteration number |
-| `time_ns` | Execution time in nanoseconds |
-| `result` | Computation result (for verification) |
+| `input_size` | Input size |
+| `avg_time_ns` | Average execution time in nanoseconds |
+| `result` | Computation result sample (for verification) |
 
 ### Running Tests
 
@@ -174,19 +175,20 @@ Extract and compare the generated assembly for Rust and C implementations:
 
 This is useful for understanding why C with `-ffast-math` auto-vectorizes while Rust preserves IEEE 754 semantics.
 
-### CPU Cycle Counter (Experimental)
+### CPU Cycle Counter (Default)
 
-For ultra-precise micro-benchmarking, enable the `cpu_cycles` feature:
+By default, the benchmark runner uses CPU cycle counters for precise measurements:
 
-```bash
-cargo run --release --features cpu_cycles
-```
-
-This uses:
 - **x86_64**: `RDTSC` (CPU timestamp counter)
 - **aarch64**: `CNTVCT_EL0` (virtual timer counter)
 
 > **Note:** The aarch64 counter is a fixed-frequency timer, not actual CPU cycles, but provides consistent measurements across cores.
+
+To use wall-clock time instead (for functions >1µs or for portability):
+
+```bash
+cargo run --release --features use_time
+```
 
 ## Adding a New Algorithm
 
@@ -244,3 +246,7 @@ Contributions are welcome! Please submit a pull request.
 - Specify CPU model and RAM specifications
 
 > **Note:** The CI pipeline only runs tests, not benchmarks.
+
+## Resources
+
+- [Agner Fog's Optimization Manuals](https://www.agner.org/optimize/#manuals) - Essential reading for low-level optimization (instruction tables, microarchitecture, C++/ASM optimization)

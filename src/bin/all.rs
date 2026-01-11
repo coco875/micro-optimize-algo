@@ -7,6 +7,7 @@
 //!   micro-algo --help       # Show help
 
 use micro_optimize_algo::registry::build_registry;
+use micro_optimize_algo::PinStrategy;
 use std::env;
 
 fn main() {
@@ -22,6 +23,7 @@ fn main() {
     let mut csv_path: Option<String> = None;
     let mut algorithm_filter: Option<String> = None;
     let mut filter_outliers: bool = false;
+    let mut pin_strategy: PinStrategy = PinStrategy::PerExecution;
 
     let mut i = 1;
     while i < args.len() {
@@ -57,6 +59,19 @@ fn main() {
             }
             "--filter" | "-f" => {
                 filter_outliers = true;
+            }
+            "--pin" => {
+                i += 1;
+                if i < args.len() {
+                    pin_strategy = match args[i].as_str() {
+                        "global" => PinStrategy::Global,
+                        "per-call" | "per-execution" => PinStrategy::PerExecution,
+                        other => {
+                            eprintln!("Unknown pin strategy '{}'. Use 'global' or 'per-call'.", other);
+                            std::process::exit(1);
+                        }
+                    };
+                }
             }
             arg if !arg.starts_with('-') => {
                 algorithm_filter = Some(arg.to_string());
@@ -94,6 +109,7 @@ fn main() {
                         seed,
                         csv_path.as_deref(),
                         filter_outliers,
+                        pin_strategy,
                     );
                 }
                 None => {
@@ -113,6 +129,7 @@ fn main() {
                 seed,
                 csv_path.as_deref(),
                 filter_outliers,
+                pin_strategy,
             );
         }
     }

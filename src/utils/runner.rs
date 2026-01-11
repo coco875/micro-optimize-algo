@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use crate::registry::{AlgorithmRunner, BenchmarkResult};
 use crate::utils::bench::{shuffle, time_seed, to_nanos, Measurement};
+#[cfg(all(feature = "cpu_cycles", not(feature = "use_time")))]
 use crate::utils::cpu_affinity::CpuPinGuard;
 use crate::utils::timer::{PinStrategy, TimingConfig};
 use crate::utils::tui::{print_algo_info_box, print_results_table, sort_variants};
@@ -63,12 +64,13 @@ pub fn run_benchmarks(
     seed: Option<u64>,
     csv_path: Option<&str>,
     filter_outliers: bool,
+    pin_strategy: PinStrategy,
 ) {
     let effective_seed = seed.unwrap_or_else(time_seed);
     let config = TimingConfig {
         runs_per_variant: runs,
         warmup_iterations: 10,
-        pin_strategy: PinStrategy::PerExecution,
+        pin_strategy,
     };
 
     print_config_info(seed, effective_seed, filter_outliers, &config);
@@ -316,7 +318,8 @@ struct ClosureContext {
 
 type ClosureVec<'a> = Vec<(ClosureContext, Box<dyn FnMut() -> (Measurement, Option<f64>) + 'a>)>;
 
-/// CPU pinned once for entire session - minimal overhead
+/// CPU pinned once for entire session - minimal overhead (only when cpu_cycles)
+#[cfg(all(feature = "cpu_cycles", not(feature = "use_time")))]
 fn execute_with_global_pin(
     closures: &mut ClosureVec,
     tasks: Vec<(usize, usize)>,
@@ -327,7 +330,19 @@ fn execute_with_global_pin(
     execute_loop(closures, tasks, measurements, result_samples);
 }
 
-/// CPU pinned per call - more accurate for long benchmarks
+/// No-op when not measuring CPU cycles
+#[cfg(any(not(feature = "cpu_cycles"), feature = "use_time"))]
+fn execute_with_global_pin(
+    closures: &mut ClosureVec,
+    tasks: Vec<(usize, usize)>,
+    measurements: &mut [Vec<Measurement>],
+    result_samples: &mut [Option<f64>],
+) {
+    execute_loop(closures, tasks, measurements, result_samples);
+}
+
+/// CPU pinned per call - more accurate for long benchmarks (only when cpu_cycles)
+#[cfg(all(feature = "cpu_cycles", not(feature = "use_time")))]
 fn execute_with_per_call_pin(
     closures: &mut ClosureVec,
     tasks: Vec<(usize, usize)>,
@@ -349,6 +364,17 @@ fn execute_with_per_call_pin(
 
         report_progress(completed, total_tasks, report_interval);
     }
+}
+
+/// No-op pinning when not measuring CPU cycles
+#[cfg(any(not(feature = "cpu_cycles"), feature = "use_time"))]
+fn execute_with_per_call_pin(
+    closures: &mut ClosureVec,
+    tasks: Vec<(usize, usize)>,
+    measurements: &mut [Vec<Measurement>],
+    result_samples: &mut [Option<f64>],
+) {
+    execute_loop(closures, tasks, measurements, result_samples);
 }
 
 fn execute_loop(

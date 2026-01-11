@@ -213,23 +213,26 @@ pub fn print_help() {
     println!("Usage: micro-algo [OPTIONS] [ALGORITHM]");
     println!();
     println!("Options:");
-    println!("  --list, -l     List all available algorithms");
-    println!("  --help, -h     Show this help message");
-    println!("  --sizes SIZES  Comma-separated vector sizes (default: 64,256,1024,4096,16384)");
-    println!("  --iter N, -r   Number of measurement runs per variant (default: 30)");
-    println!("  --seed N       Random seed for reproducible benchmarks (default: time-based)");
-    println!("  --filter, -f   Filter outliers (trim 1%% extremes from measurements)");
+    println!("  --list, -l       List all available algorithms");
+    println!("  --help, -h       Show this help message");
+    println!("  --sizes SIZES    Comma-separated input sizes (default: 64,256,1024,4096,16384)");
+    println!("  --iter, -r N     Number of runs per variant (default: 30)");
+    println!("  --seed N         Random seed for reproducible benchmarks (default: time-based)");
+    println!("  --csv FILE       Export timing data to CSV file");
+    println!("  --filter, -f     Filter outliers (trim 1% extremes from measurements)");
+    println!("  --pin MODE       CPU pin strategy: 'global' or 'per-call' (default: per-call)");
     println!();
     println!("Arguments:");
-    println!("  ALGORITHM      Name of specific algorithm to run (omit for all)");
+    println!("  ALGORITHM        Name of specific algorithm to run (omit for all)");
     println!();
     println!("Examples:");
-    println!("  micro-algo                    # Run all algorithms");
-    println!("  micro-algo dot_product        # Run only dot_product");
-    println!("  micro-algo --list             # List algorithms");
-    println!("  micro-algo --sizes 128,512    # Custom sizes");
-    println!("  micro-algo --seed 12345       # Reproducible run");
-    println!("  micro-algo --csv data.csv     # Export raw timings to CSV");
+    println!("  micro-algo                      # Run all algorithms");
+    println!("  micro-algo dot_product          # Run only dot_product");
+    println!("  micro-algo --list               # List algorithms");
+    println!("  micro-algo --sizes 128,512      # Custom sizes");
+    println!("  micro-algo --seed 12345         # Reproducible run");
+    println!("  micro-algo --csv data.csv       # Export timings to CSV");
+    println!("  micro-algo --pin global         # Use global CPU pinning");
 }
 
 /// Print the list of available algorithms

@@ -9,9 +9,24 @@ Micro-benchmarking is notoriously difficult due to system noise, compiler optimi
 ## Measurement Strategy
 
 ### 1. High-Precision Timing
+
 We support two modes of time measurement, controlled via Cargo features:
-*   **Wall-Clock Time (Default)**: Uses `std::time::Instant`, which provides monotonically increasing clock ticks. This is portable and sufficient for most macro-optimizations.
-*   **CPU Cycles (`cpu_cycles` feature)**: Uses hardware counters (e.g., `RDTSC` on x86_64) to measure exact CPU cycles. This is critical for micro-optimizations where the overhead of a system call or clock resolution would mask the improvements.
+
+*   **CPU Cycles (Default)**: Uses hardware counters (e.g., `RDTSC` on x86_64, `CNTVCT_EL0` on aarch64) to measure exact CPU cycles. This is the preferred mode for micro-benchmarking.
+*   **Wall-Clock Time (`use_time` feature or `--no-default-features`)**: Uses `std::time::Instant`, which provides monotonically increasing clock ticks. More portable but less precise for small measurements.
+
+#### Why Use CPU Cycles Instead of Wall-Clock Time?
+
+For **micro-benchmarking**, wall-clock time has several limitations:
+
+1.  **Resolution**: `std::time::Instant` typically has microsecond resolution. A function completing in 10-50 nanoseconds cannot be reliably measured—you'd measure mostly timer overhead.
+2.  **System Call Overhead**: On some platforms, reading the system clock involves a system call, adding ~100-1000 cycles of overhead per measurement.
+3.  **Frequency Scaling**: Wall-clock time depends on actual elapsed time, which is affected by CPU frequency changes (turbo boost, power saving). A function might report 100ns at 3GHz but 150ns at 2GHz, even though it executes the same number of cycles.
+4.  **Comparability**: CPU cycles are a hardware-invariant metric. "This function takes 50 cycles" is directly comparable across runs, while "50ns" depends on current clock speed.
+
+**When to use each:**
+*   Use **CPU cycles (default)** for functions taking <1µs, or when comparing instruction-level optimizations.
+*   Use **wall-clock time** (`--features use_time`) for functions taking >1µs, or when measuring real-world latency matters.
 
 ### 2. Execution Protocol
 
@@ -53,8 +68,27 @@ Performance is meaningless without correctness.
 
 ## Reproducibility
 
-*   **Seeded Randomness**: The benchmark runner accepts a generic seed. This seeds the RNG used for input generation (e.g., random vectors) and the execution order shuffler. This allows consistent reproduction of specific "lucky" or "unlucky" run orders during debugging.
+*   **Seeded Randomness**: The benchmark runner accepts a `--seed` option. This seeds the RNG used for input generation (e.g., random vectors) and the execution order shuffler. This allows consistent reproduction of specific "lucky" or "unlucky" run orders during debugging.
+
+## CPU Pinning Strategies
+
+When measuring CPU cycles, **thread migration is a major source of variance**. If the OS scheduler moves your thread to a different core mid-benchmark:
+
+1.  **TSC Desynchronization**: Each core has its own Time Stamp Counter. While modern CPUs synchronize TSCs, there can still be small offsets between cores.
+2.  **Cache Invalidation**: Moving to a new core means cold L1/L2 caches. Data and instructions must be re-fetched, adding hundreds of cycles of noise.
+3.  **NUMA Effects**: On multi-socket systems, migrating to a core on a different socket means memory accesses go through the interconnect, drastically increasing latency.
+
+To eliminate this variance, we **pin the benchmark thread to a single core** using OS-specific APIs (`sched_setaffinity` on Linux, `SetThreadAffinityMask` on Windows).
+
+**Pinning is enabled by default** since `cpu_cycles` is the default measurement mode.
+
+### Pinning Modes (`--pin`)
+
+*   **`per-call` (Default)**: Pin before each measurement, unpin after. Most accurate but adds overhead.
+*   **`global`**: Pin once at session start. Lower overhead but may cause thermal throttling on long runs.
+
+When using wall-clock time (`--features use_time`), the `--pin` option has no effect.
 
 ## Data Export
 
-For deeper analysis, the system supports exporting raw timing data to **CSV** (`--csv`). This allows users to plot histograms or perform hypothesis testing (e.g., Student's t-test) externally to verify if speedups are statistically significant.
+For deeper analysis, the system supports exporting aggregated timing data to **CSV** (`--csv`). The export includes average times per variant and input size, allowing users to perform external analysis such as plotting comparisons or statistical hypothesis testing.
