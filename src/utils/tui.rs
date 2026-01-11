@@ -8,10 +8,9 @@ use terminal_size::{terminal_size, Width};
 /// Get the current terminal width, constrained to a reasonable range
 fn get_term_width() -> usize {
     if let Some((Width(w), _)) = terminal_size() {
-        // Clamp width to avoid layout issues on very small or very large terminals
         (w as usize).clamp(40, 200)
     } else {
-        80 // Safe default
+        80
     }
 }
 
@@ -35,13 +34,10 @@ fn variant_sort_key(result: &BenchmarkResult) -> (u8, String, String) {
         || name.contains("avx")
         || name.contains("neon")
     {
-        // ASM/SIMD variants
         (3, name.clone(), compiler)
     } else if name.starts_with("c-") || name.starts_with("c_") {
-        // C variants (have compiler or c-/c_ prefix)
         (2, compiler.clone(), name.clone())
     } else {
-        // Rust variants (no compiler, no c- prefix)
         (1, name.clone(), String::new())
     }
 }
@@ -62,18 +58,8 @@ pub fn print_algo_info_box(algo: &dyn AlgorithmRunner) {
     let desc_line = algo.description();
     let var_line = format!("Variants: {}", variants_str);
 
-    // Calculate required width based on content, capped at terminal width
-    let content_width = [
-        name_line.len(),
-        cat_line.len(),
-        desc_line.len(),
-        var_line.len(),
-    ]
-    .iter()
-    .cloned()
-    .max()
-    .unwrap_or(60)
-    .min(max_content_width);
+    let content_width = [name_line.len(), cat_line.len(), desc_line.len(), var_line.len()]
+        .iter().cloned().max().unwrap_or(60).min(max_content_width);
 
     let border = "─".repeat(content_width + 2);
 
@@ -122,11 +108,9 @@ pub fn print_results_table(results: &[BenchmarkResult], size: usize, runs: usize
     }
 
     let term_width = get_term_width();
-    // Compact columns: 12+12+12+9+9+10 = 64 chars + 6 spaces + 2 indent = 72
     let fixed_width = 72;
-    // Calculate variant width based on remaining space, min 15
     let variant_col_width = term_width.saturating_sub(fixed_width).max(15);
-    let table_width = variant_col_width + 64 + 6; // variant + columns + spaces
+    let table_width = variant_col_width + 64 + 6;
 
     let baseline_time = results
         .first()
@@ -167,17 +151,12 @@ pub fn print_results_table(results: &[BenchmarkResult], size: usize, runs: usize
             0.0
         };
 
-        // Compute relative error only if both result_sample and baseline are available
         let relative_error = match (result.result_sample, baseline_result) {
             (Some(res), Some(base)) => {
                 let diff = (res - base).abs();
-                if base.abs() > 1e-9 {
-                    diff / base.abs()
-                } else {
-                    diff
-                }
+                if base.abs() > 1e-9 { diff / base.abs() } else { diff }
             }
-            _ => 0.0, // No relative error for control flow algorithms
+            _ => 0.0,
         };
 
         let display_name =

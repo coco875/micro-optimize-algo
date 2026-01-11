@@ -73,21 +73,16 @@ pub fn run_benchmarks(
 
     print_config_info(seed, effective_seed, filter_outliers, &config);
 
-    // 1. Collect closures
     let mut closures = collect_closures(algorithms, input_sizes);
     if closures.is_empty() {
         println!("  No variants to benchmark.");
         return;
     }
 
-    // 2. Warmup & generate tasks
     warmup_closures(&mut closures, config.warmup_iterations);
     let tasks = generate_shuffled_tasks(closures.len(), config.runs_per_variant, effective_seed);
-
-    // 3. Execute
     let (measurements, result_samples) = execute_tasks(&mut closures, tasks, &config);
 
-    // 4. Process & display results
     let (grouped, raw_data) = group_results(
         closures, measurements, result_samples, algorithms, 
         input_sizes.len(), config.runs_per_variant, filter_outliers
@@ -263,11 +258,9 @@ fn compute_result(
         };
     }
 
-    // Convert to nanos for statistics
     let mut nanos: Vec<u64> = values.iter().map(|m| to_nanos(*m)).collect();
     nanos.sort();
     
-    // Apply outlier filtering if requested (trim 0.5% from each end)
     let trimmed = if filter_outliers && nanos.len() > 10 {
         let trim_count = (nanos.len() as f64 * 0.005).ceil() as usize;
         let start = trim_count.min(nanos.len() / 4);
@@ -323,42 +316,18 @@ struct ClosureContext {
 
 type ClosureVec<'a> = Vec<(ClosureContext, Box<dyn FnMut() -> (Measurement, Option<f64>) + 'a>)>;
 
-/// Execute all tasks with CPU pinned once for the entire session.
-/// Minimal overhead - ideal for short-running benchmarks.
+/// CPU pinned once for entire session - minimal overhead
 fn execute_with_global_pin(
     closures: &mut ClosureVec,
     tasks: Vec<(usize, usize)>,
     measurements: &mut [Vec<Measurement>],
     result_samples: &mut [Option<f64>],
 ) {
-    let total_tasks = tasks.len();
-    let report_interval = (total_tasks / 10).max(1);
-
-    // Pin once for entire execution
     let _pin = CpuPinGuard::new();
-
-    for (completed, (closure_idx, _)) in tasks.into_iter().enumerate() {
-        let (_, closure) = &mut closures[closure_idx];
-
-        // Timing happens inside the closure
-        let (elapsed_time, result) = closure();
-
-        measurements[closure_idx].push(elapsed_time);
-        if result.is_some() {
-            result_samples[closure_idx] = result;
-        }
-
-        if (completed + 1) % report_interval == 0 {
-            let pct = ((completed + 1) * 100) / total_tasks;
-            print!("\r  Progress: {}%   ", pct);
-            use std::io::Write;
-            let _ = std::io::stdout().flush();
-        }
-    }
+    execute_loop(closures, tasks, measurements, result_samples);
 }
 
-/// Execute all tasks with CPU pinned/unpinned for each call.
-/// More accurate for long-running benchmarks that might migrate cores.
+/// CPU pinned per call - more accurate for long benchmarks
 fn execute_with_per_call_pin(
     closures: &mut ClosureVec,
     tasks: Vec<(usize, usize)>,
@@ -370,11 +339,7 @@ fn execute_with_per_call_pin(
 
     for (completed, (closure_idx, _)) in tasks.into_iter().enumerate() {
         let (_, closure) = &mut closures[closure_idx];
-
-        // Pin for this execution only
         let _pin = CpuPinGuard::new();
-
-        // Timing happens inside the closure
         let (elapsed_time, result) = closure();
 
         measurements[closure_idx].push(elapsed_time);
@@ -382,12 +347,38 @@ fn execute_with_per_call_pin(
             result_samples[closure_idx] = result;
         }
 
-        if (completed + 1) % report_interval == 0 {
-            let pct = ((completed + 1) * 100) / total_tasks;
-            print!("\r  Progress: {}%   ", pct);
-            use std::io::Write;
-            let _ = std::io::stdout().flush();
+        report_progress(completed, total_tasks, report_interval);
+    }
+}
+
+fn execute_loop(
+    closures: &mut ClosureVec,
+    tasks: Vec<(usize, usize)>,
+    measurements: &mut [Vec<Measurement>],
+    result_samples: &mut [Option<f64>],
+) {
+    let total_tasks = tasks.len();
+    let report_interval = (total_tasks / 10).max(1);
+
+    for (completed, (closure_idx, _)) in tasks.into_iter().enumerate() {
+        let (_, closure) = &mut closures[closure_idx];
+        let (elapsed_time, result) = closure();
+
+        measurements[closure_idx].push(elapsed_time);
+        if result.is_some() {
+            result_samples[closure_idx] = result;
         }
+
+        report_progress(completed, total_tasks, report_interval);
+    }
+}
+
+fn report_progress(completed: usize, total: usize, interval: usize) {
+    if (completed + 1) % interval == 0 {
+        let pct = ((completed + 1) * 100) / total;
+        print!("\r  Progress: {}%   ", pct);
+        use std::io::Write;
+        let _ = std::io::stdout().flush();
     }
 }
 

@@ -9,13 +9,6 @@
 
 use std::time::Duration;
 
-// ============================================================================
-// Measurement abstraction: cycles or time depending on feature flags
-// ============================================================================
-//
-// Use CPU cycles if: cpu_cycles is enabled AND use_time is NOT enabled
-// Use wall-clock time if: use_time is enabled OR cpu_cycles is disabled
-
 /// Measurement value type - cycles (u64) or Duration depending on feature
 #[cfg(all(feature = "cpu_cycles", not(feature = "use_time")))]
 pub type Measurement = u64;
@@ -52,7 +45,6 @@ pub fn elapsed(start: std::time::Instant) -> Measurement {
 /// Convert measurement to nanoseconds for display
 #[cfg(all(feature = "cpu_cycles", not(feature = "use_time")))]
 pub fn to_nanos(m: Measurement) -> u64 {
-    // Return raw cycles
     m
 }
 
@@ -113,10 +105,6 @@ macro_rules! measure {
         (elapsed, result)
     }};
 }
-
-// ============================================================================
-// Utility functions
-// ============================================================================
 
 /// Calculate standard deviation from a list of durations
 pub fn calculate_std_dev(times: &[Duration], mean: Duration) -> Duration {

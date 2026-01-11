@@ -9,10 +9,7 @@
 use std::hint::black_box;
 use std::time::Duration;
 
-// Re-export CPU affinity utilities
 pub use super::cpu_affinity::{pin_to_current_core, unpin, CpuPinGuard};
-
-// Import measurement primitives from bench
 use super::bench::{shuffle, time_seed, to_nanos, Measurement};
 
 // ============================================================================
@@ -49,10 +46,6 @@ impl Default for TimingConfig {
         }
     }
 }
-
-// ============================================================================
-// Variant measurement
-// ============================================================================
 
 /// A variant to be measured
 pub struct Variant<'a> {
@@ -133,30 +126,18 @@ pub fn measure_variants(
         .collect();
     let mut result_samples: Vec<Option<f64>> = vec![None; variants.len()];
 
-    // Global pin if configured
-    let _global_pin = (config.pin_strategy == PinStrategy::Global)
-        .then(CpuPinGuard::new);
+    let _global_pin = (config.pin_strategy == PinStrategy::Global).then(CpuPinGuard::new);
 
-    // Execute measurements
     for (variant_idx, _) in tasks {
         let variant = &mut variants[variant_idx];
-
-        // Per-execution pin only if strategy is PerExecution
-        let _per_exec_pin = (config.pin_strategy == PinStrategy::PerExecution)
-            .then(CpuPinGuard::new);
-
-        // Timing happens inside the closure
+        let _per_exec_pin = (config.pin_strategy == PinStrategy::PerExecution).then(CpuPinGuard::new);
         let (elapsed_time, result) = (variant.run)();
 
         measurements[variant_idx].push(elapsed_time);
         result_samples[variant_idx] = result;
     }
 
-    // Compute results
-    variants
-        .into_iter()
-        .enumerate()
-        .map(|(idx, variant)| {
+    variants.into_iter().enumerate().map(|(idx, variant)| {
             let times = std::mem::take(&mut measurements[idx]);
             let result_sample = result_samples[idx].take();
             compute_variant_result(variant.name, variant.description, times, iterations, result_sample)
@@ -186,7 +167,6 @@ fn compute_variant_result(
         };
     }
 
-    // Convert measurements to nanos for statistics
     let nanos: Vec<u64> = measurements.iter().map(|m| to_nanos(*m)).collect();
 
     let mut sorted = nanos.clone();
@@ -198,9 +178,8 @@ fn compute_variant_result(
 
     let sum: u64 = nanos.iter().sum();
     let avg_ns = sum / nanos.len() as u64;
-
-    // Standard deviation
     let avg_f = avg_ns as f64;
+
     let variance: f64 = nanos
         .iter()
         .map(|&n| {
@@ -223,10 +202,6 @@ fn compute_variant_result(
         result_sample,
     }
 }
-
-// ============================================================================
-// Legacy API (for backward compatibility during transition)
-// ============================================================================
 
 /// Calculate median from a slice of durations.
 pub fn calculate_median(times: &[Duration]) -> Duration {
