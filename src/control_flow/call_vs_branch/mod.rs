@@ -1,31 +1,12 @@
 //! # Call vs Branch Comparison
-//!
-//! This module demonstrates the difference between function calls (CALL/RET)
-//! and inline conditional branches in x86_64 assembly.
-//!
-//! ## Key Concepts
-//!
-//! - **CALL**: Pushes return address on stack, jumps to function, RET pops and returns.
-//!   Has overhead from stack operations and return address prediction.
-//!
-//! - **Inline Branch (Jcc)**: Code is inlined, no function call overhead.
-//!   Larger code size but faster execution for small operations.
-//!
-//! ## Performance Implications
-//!
-//! - CALL: ~3-5 cycles overhead for call/ret pair on modern CPUs
-//! - Inline: No call overhead, but may increase code size and I-cache pressure
-//! - Return Stack Buffer (RSB): CPUs predict return addresses, misprediction is costly
 
-pub mod bench;
 pub mod code;
 pub mod test;
 
-use crate::registry::{AlgorithmRunner, BenchmarkClosure, BenchmarkResult};
-use std::hint::black_box;
+use crate::registry::{AlgorithmRunner, VariantClosure};
 use std::sync::Arc;
 
-/// Generate test data - random values to stress branch prediction
+/// Generate test data
 fn generate_test_data(size: usize, seed: u64) -> Vec<u32> {
     let mut data = Vec::with_capacity(size);
     let mut rng = seed;
@@ -49,25 +30,15 @@ impl AlgorithmRunner for CallVsBranchRunner {
     }
 
     fn description(&self) -> &'static str {
-        "Comparison between function calls (CALL/RET) and inline code in x86_64 assembly"
+        "Comparison between function calls (CALL/RET) and inline code"
     }
 
     fn available_variants(&self) -> Vec<&'static str> {
         code::get_variants().iter().map(|v| v.name).collect()
     }
 
-    fn run_benchmarks(&self, size: usize, iterations: usize) -> Vec<BenchmarkResult> {
-        bench::run_benchmarks(size, iterations)
-    }
-
-    fn verify(&self) -> Result<(), String> {
-        test::verify_all()
-    }
-
-    fn get_benchmark_closures(&self, size: usize, seed: u64) -> Vec<BenchmarkClosure> {
-        use std::time::Instant;
-
-        let data: Arc<Vec<u32>> = Arc::new(generate_test_data(size, seed));
+    fn get_variant_closures<'a>(&'a self, size: usize) -> Vec<VariantClosure<'a>> {
+        let data: Arc<Vec<u32>> = Arc::new(generate_test_data(size, 0x12345678));
 
         code::get_variants()
             .into_iter()
@@ -75,34 +46,26 @@ impl AlgorithmRunner for CallVsBranchRunner {
                 let data = Arc::clone(&data);
                 let func = v.function;
 
-                BenchmarkClosure {
+                VariantClosure {
                     name: v.name,
                     description: v.description,
                     run: Box::new(move || {
-                        let mut last_result = 0u32;
-
-                        let start = Instant::now();
-                        for &v in data.iter() {
-                            last_result = black_box(func(black_box(v)));
-                        }
-                        let elapsed = start.elapsed();
-
-                        (last_result as f64, elapsed)
+                        // Timing inside closure - measures entire loop
+                        let (elapsed, _) = crate::measure!({
+                            let mut last_result = 0u32;
+                            for &val in data.iter() {
+                                last_result = std::hint::black_box(func(std::hint::black_box(val)));
+                            }
+                            last_result
+                        });
+                        (elapsed, None) // No precision measurement for control flow
                     }),
                 }
             })
             .collect()
     }
 
-    fn warmup(&self, size: usize, warmup_iterations: usize, seed: u64) {
-        let data = generate_test_data(size, seed);
-
-        for v in code::get_variants() {
-            for _ in 0..warmup_iterations {
-                for &val in data.iter().take(100) {
-                    black_box((v.function)(black_box(val)));
-                }
-            }
-        }
+    fn verify(&self) -> Result<(), String> {
+        test::verify_all()
     }
 }

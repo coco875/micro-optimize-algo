@@ -1,26 +1,9 @@
 //! # Else-If Chain vs Jump Table Comparison
-//!
-//! This module demonstrates the difference between a chain of else-if statements
-//! and a jump table (also known as branch table or switch table) in x86_64 assembly.
-//!
-//! ## Key Concepts
-//!
-//! - **Else-If Chain**: Linear comparison, O(n) time complexity
-//! - **Jump Table**: Indexed lookup, O(1) time complexity
-//!
-//! ## Performance Implications
-//!
-//! - Else-If: Time grows with position in chain (early cases faster)
-//! - Jump Table: Constant time regardless of which case is taken
-//! - Jump Table has setup overhead (bounds check, address calculation)
-//! - For small number of cases (<4), else-if may be faster
 
-pub mod bench;
 pub mod code;
 pub mod test;
 
-use crate::registry::{AlgorithmRunner, BenchmarkClosure, BenchmarkResult};
-use std::hint::black_box;
+use crate::registry::{AlgorithmRunner, VariantClosure};
 use std::sync::Arc;
 
 /// Generate test data - random opcodes (0-7) and values
@@ -49,25 +32,15 @@ impl AlgorithmRunner for ElseIfVsJumpTableRunner {
     }
 
     fn description(&self) -> &'static str {
-        "Comparison between else-if chains and jump tables in x86_64 assembly"
+        "Comparison between else-if chains and jump tables"
     }
 
     fn available_variants(&self) -> Vec<&'static str> {
         code::get_variants().iter().map(|v| v.name).collect()
     }
 
-    fn run_benchmarks(&self, size: usize, iterations: usize) -> Vec<BenchmarkResult> {
-        bench::run_benchmarks(size, iterations)
-    }
-
-    fn verify(&self) -> Result<(), String> {
-        test::verify_all()
-    }
-
-    fn get_benchmark_closures(&self, size: usize, seed: u64) -> Vec<BenchmarkClosure> {
-        use std::time::Instant;
-
-        let data: Arc<Vec<(u8, u32)>> = Arc::new(generate_test_data(size, seed));
+    fn get_variant_closures<'a>(&'a self, size: usize) -> Vec<VariantClosure<'a>> {
+        let data: Arc<Vec<(u8, u32)>> = Arc::new(generate_test_data(size, 0x87654321));
 
         code::get_variants()
             .into_iter()
@@ -75,34 +48,26 @@ impl AlgorithmRunner for ElseIfVsJumpTableRunner {
                 let data = Arc::clone(&data);
                 let func = v.function;
 
-                BenchmarkClosure {
+                VariantClosure {
                     name: v.name,
                     description: v.description,
                     run: Box::new(move || {
-                        let mut last_result = 0u32;
-
-                        let start = Instant::now();
-                        for &(op, val) in data.iter() {
-                            last_result = black_box(func(black_box(op), black_box(val)));
-                        }
-                        let elapsed = start.elapsed();
-
-                        (last_result as f64, elapsed)
+                        // Timing inside closure - measures entire loop
+                        let (elapsed, _) = crate::measure!({
+                            let mut last_result = 0u32;
+                            for &(op, val) in data.iter() {
+                                last_result = std::hint::black_box(func(std::hint::black_box(op), std::hint::black_box(val)));
+                            }
+                            last_result
+                        });
+                        (elapsed, None) // No precision measurement for control flow
                     }),
                 }
             })
             .collect()
     }
 
-    fn warmup(&self, size: usize, warmup_iterations: usize, seed: u64) {
-        let data = generate_test_data(size, seed);
-
-        for v in code::get_variants() {
-            for _ in 0..warmup_iterations {
-                for &(op, val) in data.iter().take(100) {
-                    black_box((v.function)(black_box(op), black_box(val)));
-                }
-            }
-        }
+    fn verify(&self) -> Result<(), String> {
+        test::verify_all()
     }
 }

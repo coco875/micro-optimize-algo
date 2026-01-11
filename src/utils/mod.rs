@@ -13,10 +13,7 @@ pub use bench::{
     calculate_std_dev, compute_stats, shuffle, shuffle_with_rng, time_seed, SeededRng,
 };
 pub use cpu_affinity::CpuPinGuard;
-pub use runner::run_all_algorithms_randomized;
-pub use timer::{
-    calculate_median, calibrate, measure, measure_batched, TimingConfig, TimingResult,
-};
+pub use timer::{calculate_median, measure_variants, TimingConfig, Variant, VariantResult};
 
 #[cfg(any(not(feature = "cpu_cycles"), feature = "use_time"))]
 pub use bench::{elapsed, now};

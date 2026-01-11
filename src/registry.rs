@@ -3,31 +3,19 @@
 //! This module provides a generic interface for registering and running
 //! algorithms without needing separate binary files for each.
 
-use std::time::Duration;
+use crate::utils::bench::Measurement;
+use crate::utils::timer::VariantResult;
 
-/// Result from running a variant benchmark
-#[derive(Clone)]
-pub struct BenchmarkResult {
-    pub variant_name: String,
-    pub description: String,
-    pub avg_time: Duration,
-    pub median_time: Duration, // Median timing measurement
-    pub min_time: Duration,
-    pub max_time: Duration,
-    pub std_dev: Duration, // Standard deviation of timing measurements
-    pub iterations: usize,
+/// Result from running a variant benchmark (alias for VariantResult)
+pub type BenchmarkResult = VariantResult;
 
-    pub result_sample: f64,
-}
-
-/// A benchmark closure - a function that runs one iteration and returns result + timing
-pub struct BenchmarkClosure {
+/// A simple closure that runs one iteration of a variant
+pub struct VariantClosure<'a> {
     pub name: &'static str,
     pub description: &'static str,
-
-    /// The actual benchmark function - runs one iteration, returns (result, elapsed_time)
-    /// Each implementation measures its own time internally to exclude FFI overhead for C variants
-    pub run: Box<dyn FnMut() -> (f64, Duration) + Send>,
+    /// Returns (timing_measurement, optional_result_value).
+    /// Timing happens inside the closure to eliminate Fn trait overhead.
+    pub run: Box<dyn FnMut() -> (Measurement, Option<f64>) + 'a>,
 }
 
 /// Trait that all algorithm benchmarkers must implement
@@ -41,23 +29,16 @@ pub trait AlgorithmRunner: Send + Sync {
     /// Category (e.g., "math", "sorting")
     fn category(&self) -> &'static str;
 
-    /// Run benchmarks for all variants at a given input size (legacy method)
-    fn run_benchmarks(&self, size: usize, iterations: usize) -> Vec<BenchmarkResult>;
-
     /// Get list of available variant names
     fn available_variants(&self) -> Vec<&'static str>;
 
+    /// Get closures for each variant, ready to be measured.
+    /// Each closure does ONE execution and returns a result value.
+    /// The runner will handle warmup, timing, and repetition.
+    fn get_variant_closures<'a>(&'a self, size: usize) -> Vec<VariantClosure<'a>>;
+
     /// Verify correctness of all variants against the reference
     fn verify(&self) -> Result<(), String>;
-
-    /// Get benchmark closures for randomized execution
-    /// Each closure runs one iteration of one variant
-    /// The seed is used to generate reproducible test data
-    fn get_benchmark_closures(&self, size: usize, seed: u64) -> Vec<BenchmarkClosure>;
-
-    /// Warmup all variants
-    /// The seed is used to generate reproducible test data
-    fn warmup(&self, size: usize, warmup_iterations: usize, seed: u64);
 }
 
 /// Global registry of all algorithms

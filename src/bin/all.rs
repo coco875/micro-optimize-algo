@@ -17,10 +17,11 @@ fn main() {
     let mut show_list = false;
     let mut show_help = false;
     let mut sample_sizes: Vec<usize> = vec![64, 256, 1024, 4096, 16384];
-    let mut iterations: usize = 10000;
+    let mut runs: usize = 30;
     let mut seed: Option<u64> = None;
     let mut csv_path: Option<String> = None;
     let mut algorithm_filter: Option<String> = None;
+    let mut filter_outliers: bool = false;
 
     let mut i = 1;
     while i < args.len() {
@@ -36,10 +37,10 @@ fn main() {
                         .collect();
                 }
             }
-            "--iter" => {
+            "--iter" | "--runs" | "-r" => {
                 i += 1;
                 if i < args.len() {
-                    iterations = args[i].parse().unwrap_or(10000);
+                    runs = args[i].parse().unwrap_or(30);
                 }
             }
             "--seed" => {
@@ -53,6 +54,9 @@ fn main() {
                 if i < args.len() {
                     csv_path = Some(args[i].clone());
                 }
+            }
+            "--filter" | "-f" => {
+                filter_outliers = true;
             }
             arg if !arg.starts_with('-') => {
                 algorithm_filter = Some(arg.to_string());
@@ -79,10 +83,18 @@ fn main() {
 
     match algorithm_filter {
         Some(name) => {
-            // Running a single algorithm - use the standard sequential method
+            // Running a single algorithm
             match registry.find(&name) {
                 Some(algo) => {
-                    micro_optimize_algo::tui::run_and_display(algo, &sample_sizes, iterations)
+                    let algos = vec![algo];
+                    micro_optimize_algo::tui::run_benchmarks(
+                        &algos,
+                        &sample_sizes,
+                        runs,
+                        seed,
+                        csv_path.as_deref(),
+                        filter_outliers,
+                    );
                 }
                 None => {
                     eprintln!("Algorithm '{}' not found.", name);
@@ -92,14 +104,15 @@ fn main() {
             }
         }
         None => {
-            // Running all algorithms - use the randomized cross-algorithm method
+            // Running all algorithms
             let all_algos: Vec<_> = registry.all().iter().map(|a| a.as_ref()).collect();
-            micro_optimize_algo::tui::run_all_algorithms_randomized(
+            micro_optimize_algo::tui::run_benchmarks(
                 &all_algos,
                 &sample_sizes,
-                iterations,
+                runs,
                 seed,
                 csv_path.as_deref(),
+                filter_outliers,
             );
         }
     }

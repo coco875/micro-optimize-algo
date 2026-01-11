@@ -1,11 +1,8 @@
-pub mod bench;
 pub mod code;
 #[cfg(test)]
 pub mod test;
 
-use crate::registry::{AlgorithmRunner, BenchmarkClosure, BenchmarkResult};
-use std::cell::RefCell;
-use std::hint::black_box;
+use crate::registry::{AlgorithmRunner, VariantClosure};
 
 pub struct XoroshiroRunner;
 
@@ -26,20 +23,37 @@ impl AlgorithmRunner for XoroshiroRunner {
         code::available_variants().iter().map(|v| v.name).collect()
     }
 
-    fn run_benchmarks(&self, size: usize, iterations: usize) -> Vec<BenchmarkResult> {
-        // Skip small sizes as they might be too fast/noisy for this throughput benchmark
-        if size < 1024 {
+    fn get_variant_closures<'a>(&'a self, size: usize) -> Vec<VariantClosure<'a>> {
+        // Only run for the smallest size to avoid redundant measurements
+        // Since we measure a single function call, size is irrelevant
+        if size != 64 {
             return Vec::new();
         }
 
-        // Benchmark generating 'size' random numbers per iteration
-        bench::run_all_benchmarks(size, iterations)
+        code::available_variants()
+            .into_iter()
+            .map(|v| {
+                let func = v.function;
+                // Use mutable captures directly - FnMut allows this
+                let mut s0 = 0x12345678u64;
+                let mut s1 = 0x87654321u64;
+
+                VariantClosure {
+                    name: v.name,
+                    description: v.description,
+                    run: Box::new(move || {
+                        // Timing inside closure eliminates Fn trait overhead
+                        let (elapsed, result) = crate::measure!(func(&mut s0, &mut s1));
+                        (elapsed, Some(result as f64))
+                    }),
+                }
+            })
+            .collect()
     }
 
     fn verify(&self) -> Result<(), String> {
         let variants = code::available_variants();
 
-        // Find reference implementation
         let original_variant = variants
             .iter()
             .find(|v| v.name == "original")
@@ -48,7 +62,6 @@ impl AlgorithmRunner for XoroshiroRunner {
         let seed_lo_ref = 0xdeadbeef;
         let seed_hi_ref = 0xcafebab;
 
-        // Generate a sequence of numbers for reference
         let mut expected_sequence = Vec::new();
         let mut s0 = seed_lo_ref;
         let mut s1 = seed_hi_ref;
@@ -76,50 +89,5 @@ impl AlgorithmRunner for XoroshiroRunner {
         }
 
         Ok(())
-    }
-
-    fn get_benchmark_closures(&self, size: usize, seed: u64) -> Vec<BenchmarkClosure> {
-        use std::time::Instant;
-
-        code::available_variants()
-            .into_iter()
-            .map(|v| {
-                let func = v.function;
-                // Each closure has its own RNG state derived from seed
-                let state0 = RefCell::new(seed);
-                let state1 = RefCell::new(seed.wrapping_mul(0xDEADBEEF));
-
-                BenchmarkClosure {
-                    name: v.name,
-                    description: v.description,
-                    run: Box::new(move || {
-                        let mut s0 = state0.borrow_mut();
-                        let mut s1 = state1.borrow_mut();
-                        let mut result = 0u64;
-
-                        let start = Instant::now();
-                        for _ in 0..size {
-                            result = func(&mut s0, &mut s1);
-                            black_box(result);
-                        }
-                        let elapsed = start.elapsed();
-
-                        (result as f64, elapsed)
-                    }),
-                }
-            })
-            .collect()
-    }
-
-    fn warmup(&self, size: usize, warmup_iterations: usize, seed: u64) {
-        for v in code::available_variants() {
-            let mut s0: u64 = seed;
-            let mut s1: u64 = seed.wrapping_mul(0xDEADBEEF);
-            for _ in 0..warmup_iterations {
-                for _ in 0..size {
-                    black_box((v.function)(&mut s0, &mut s1));
-                }
-            }
-        }
     }
 }
