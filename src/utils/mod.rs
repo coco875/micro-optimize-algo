@@ -4,6 +4,7 @@ pub mod bench;
 pub mod cpu_affinity;
 pub mod runner;
 pub mod timer;
+pub mod tui;
 
 #[cfg(all(feature = "cpu_cycles", not(feature = "use_time")))]
 pub mod cycles;

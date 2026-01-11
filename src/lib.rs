@@ -6,8 +6,13 @@ pub mod control_flow;
 pub mod math;
 pub mod random;
 pub mod registry;
-pub mod tui;
 pub mod utils;
+
+/// Re-export tui from utils for backward compatibility
+pub use utils::tui;
+
+/// Re-export run_benchmarks from utils::runner
+pub use utils::runner::run_benchmarks;
 
 /// Re-export commonly used items
 pub mod prelude {

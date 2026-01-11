@@ -87,7 +87,7 @@ fn main() {
             match registry.find(&name) {
                 Some(algo) => {
                     let algos = vec![algo];
-                    micro_optimize_algo::tui::run_benchmarks(
+                    micro_optimize_algo::run_benchmarks(
                         &algos,
                         &sample_sizes,
                         runs,
@@ -106,7 +106,7 @@ fn main() {
         None => {
             // Running all algorithms
             let all_algos: Vec<_> = registry.all().iter().map(|a| a.as_ref()).collect();
-            micro_optimize_algo::tui::run_benchmarks(
+            micro_optimize_algo::run_benchmarks(
                 &all_algos,
                 &sample_sizes,
                 runs,
