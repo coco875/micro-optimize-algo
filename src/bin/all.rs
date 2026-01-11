@@ -37,24 +37,52 @@ fn main() {
                         .split(',')
                         .filter_map(|s| s.trim().parse().ok())
                         .collect();
+                    if sample_sizes.is_empty() {
+                        eprintln!("Error: --sizes requires valid comma-separated integers");
+                        std::process::exit(1);
+                    }
+                } else {
+                    eprintln!("Error: --sizes requires a value (e.g., --sizes 64,256,1024)");
+                    std::process::exit(1);
                 }
             }
             "--iter" | "--runs" | "-r" => {
                 i += 1;
                 if i < args.len() {
-                    runs = args[i].parse().unwrap_or(30);
+                    runs = match args[i].parse() {
+                        Ok(n) if n > 0 => n,
+                        _ => {
+                            eprintln!("Error: --iter requires a positive integer");
+                            std::process::exit(1);
+                        }
+                    };
+                } else {
+                    eprintln!("Error: --iter requires a value (e.g., --iter 1000)");
+                    std::process::exit(1);
                 }
             }
             "--seed" => {
                 i += 1;
                 if i < args.len() {
-                    seed = args[i].parse().ok();
+                    seed = match args[i].parse() {
+                        Ok(n) => Some(n),
+                        Err(_) => {
+                            eprintln!("Error: --seed requires a valid integer");
+                            std::process::exit(1);
+                        }
+                    };
+                } else {
+                    eprintln!("Error: --seed requires a value (e.g., --seed 12345)");
+                    std::process::exit(1);
                 }
             }
             "--csv" => {
                 i += 1;
                 if i < args.len() {
                     csv_path = Some(args[i].clone());
+                } else {
+                    eprintln!("Error: --csv requires a file path (e.g., --csv results.csv)");
+                    std::process::exit(1);
                 }
             }
             "--filter" | "-f" => {
@@ -67,17 +95,21 @@ fn main() {
                         "global" => PinStrategy::Global,
                         "per-call" | "per-execution" => PinStrategy::PerExecution,
                         other => {
-                            eprintln!("Unknown pin strategy '{}'. Use 'global' or 'per-call'.", other);
+                            eprintln!("Error: Unknown pin strategy '{}'. Use 'global' or 'per-call'.", other);
                             std::process::exit(1);
                         }
                     };
+                } else {
+                    eprintln!("Error: --pin requires a value (e.g., --pin global or --pin per-call)");
+                    std::process::exit(1);
                 }
             }
             arg if !arg.starts_with('-') => {
                 algorithm_filter = Some(arg.to_string());
             }
             _ => {
-                eprintln!("Unknown option: {}", args[i]);
+                eprintln!("Error: Unknown option '{}'", args[i]);
+                eprintln!("Use --help for usage information.");
                 std::process::exit(1);
             }
         }
