@@ -64,37 +64,60 @@ pub fn run_benchmarks(
     csv_path: Option<&str>,
     filter_outliers: bool,
 ) {
-    use std::hint::black_box;
-
-    // Use user-provided seed or fall back to time-based seed
     let effective_seed = seed.unwrap_or_else(time_seed);
-
-    let num_algos = algorithms.len();
-    let num_sizes = input_sizes.len();
-
     let config = TimingConfig {
         runs_per_variant: runs,
         warmup_iterations: 10,
         pin_strategy: PinStrategy::PerExecution,
     };
 
+    print_config_info(seed, effective_seed, filter_outliers, &config);
+
+    // 1. Collect closures
+    let mut closures = collect_closures(algorithms, input_sizes);
+    if closures.is_empty() {
+        println!("  No variants to benchmark.");
+        return;
+    }
+
+    // 2. Warmup & generate tasks
+    warmup_closures(&mut closures, config.warmup_iterations);
+    let tasks = generate_shuffled_tasks(closures.len(), config.runs_per_variant, effective_seed);
+
+    // 3. Execute
+    let (measurements, result_samples) = execute_tasks(&mut closures, tasks, &config);
+
+    // 4. Process & display results
+    let (grouped, raw_data) = group_results(
+        closures, measurements, result_samples, algorithms, 
+        input_sizes.len(), config.runs_per_variant, filter_outliers
+    );
+
+    if let Some(path) = csv_path {
+        export_csv_with_message(path, &raw_data);
+    }
+
+    display_results(algorithms, input_sizes, &grouped, config.runs_per_variant, filter_outliers);
+}
+
+// ============================================================================
+// Helper functions for run_benchmarks
+// ============================================================================
+
+fn print_config_info(seed: Option<u64>, effective_seed: u64, filter_outliers: bool, config: &TimingConfig) {
     println!("  Seed: {} ({})", effective_seed, if seed.is_some() { "user-provided" } else { "time-based" });
     if filter_outliers {
         println!("  Outlier filtering: enabled (trimming 1% extremes)");
     }
+    println!("  Pin strategy: {:?}", config.pin_strategy);
+}
+
+fn collect_closures<'a>(
+    algorithms: &[&'a dyn AlgorithmRunner],
+    input_sizes: &[usize],
+) -> ClosureVec<'a> {
     println!("  Collecting benchmark closures...");
-
-    // Context for each closure
-    struct ClosureContext {
-        algo_idx: usize,
-        size_idx: usize,
-        input_size: usize,
-        name: &'static str,
-        description: &'static str,
-    }
-
-    // 1. Collect ALL closures into a flat Vec
-    let mut closures: Vec<(ClosureContext, Box<dyn FnMut() -> (Measurement, Option<f64>) + '_>)> = Vec::new();
+    let mut closures = Vec::new();
 
     for (algo_idx, algo) in algorithms.iter().enumerate() {
         for (size_idx, &input_size) in input_sizes.iter().enumerate() {
@@ -112,59 +135,57 @@ pub fn run_benchmarks(
             }
         }
     }
+    closures
+}
 
-    if closures.is_empty() {
-        println!("  No variants to benchmark.");
-        return;
-    }
-
-    // 2. Warmup
+fn warmup_closures(closures: &mut ClosureVec, iterations: usize) {
+    use std::hint::black_box;
     println!("  Warming up {} variants...", closures.len());
-    for (_, closure) in &mut closures {
-        for _ in 0..config.warmup_iterations {
+    for (_, closure) in closures.iter_mut() {
+        for _ in 0..iterations {
             let _ = black_box(closure());
         }
     }
+}
 
-    // 3. Generate and shuffle tasks globally: (closure_idx, run_idx)
-    let runs = config.runs_per_variant;
-    let mut tasks: Vec<(usize, usize)> = (0..closures.len())
+fn generate_shuffled_tasks(num_closures: usize, runs: usize, seed: u64) -> Vec<(usize, usize)> {
+    let mut tasks: Vec<(usize, usize)> = (0..num_closures)
         .flat_map(|c| (0..runs).map(move |r| (c, r)))
         .collect();
-    shuffle(&mut tasks, effective_seed);
+    shuffle(&mut tasks, seed);
+    println!("  Running {} tasks (globally randomized)...", tasks.len());
+    tasks
+}
 
-    let total_tasks = tasks.len();
-    println!("  Running {} tasks (globally randomized)...", total_tasks);
-
-    // 4. Execute all tasks with measurements
+fn execute_tasks(
+    closures: &mut ClosureVec,
+    tasks: Vec<(usize, usize)>,
+    config: &TimingConfig,
+) -> (Vec<Vec<Measurement>>, Vec<Option<f64>>) {
+    let runs = config.runs_per_variant;
     let mut measurements: Vec<Vec<Measurement>> = vec![Vec::with_capacity(runs); closures.len()];
     let mut result_samples: Vec<Option<f64>> = vec![None; closures.len()];
 
-    let report_interval = (total_tasks / 10).max(1);
-
-    for (completed, (closure_idx, _)) in tasks.into_iter().enumerate() {
-        let (_, closure) = &mut closures[closure_idx];
-        let _pin = CpuPinGuard::new();
-
-        // Timing happens inside the closure
-        let (elapsed_time, result) = closure();
-
-        measurements[closure_idx].push(elapsed_time);
-        if result.is_some() {
-            result_samples[closure_idx] = result;
-        }
-
-        if (completed + 1) % report_interval == 0 {
-            let pct = ((completed + 1) * 100) / total_tasks;
-            print!("\r  Progress: {}%   ", pct);
-            use std::io::Write;
-            let _ = std::io::stdout().flush();
-        }
+    match config.pin_strategy {
+        PinStrategy::Global => execute_with_global_pin(closures, tasks, &mut measurements, &mut result_samples),
+        PinStrategy::PerExecution => execute_with_per_call_pin(closures, tasks, &mut measurements, &mut result_samples),
     }
+    
     println!("\r  Completed!          ");
     println!();
+    (measurements, result_samples)
+}
 
-    // 5. Group results by algorithm and size
+fn group_results(
+    closures: ClosureVec,
+    mut measurements: Vec<Vec<Measurement>>,
+    result_samples: Vec<Option<f64>>,
+    algorithms: &[&dyn AlgorithmRunner],
+    num_sizes: usize,
+    runs: usize,
+    filter_outliers: bool,
+) -> (Vec<Vec<Vec<BenchmarkResult>>>, Vec<RawTimingData>) {
+    let num_algos = algorithms.len();
     let mut grouped: Vec<Vec<Vec<BenchmarkResult>>> = vec![vec![Vec::new(); num_sizes]; num_algos];
     let mut raw_data: Vec<RawTimingData> = Vec::new();
 
@@ -184,25 +205,28 @@ pub fn run_benchmarks(
 
         grouped[ctx.algo_idx][ctx.size_idx].push(result);
     }
+    (grouped, raw_data)
+}
 
-    // 6. Export CSV if requested
-    if let Some(path) = csv_path {
-        match export_csv(path, &raw_data) {
-            Ok(()) => println!("  Raw data exported to: {}", path),
-            Err(e) => eprintln!("  Warning: Failed to export CSV: {}", e),
-        }
-        println!();
+fn export_csv_with_message(path: &str, data: &[RawTimingData]) {
+    match export_csv(path, data) {
+        Ok(()) => println!("  Raw data exported to: {}", path),
+        Err(e) => eprintln!("  Warning: Failed to export CSV: {}", e),
     }
+    println!();
+}
 
-    // 7. Display results grouped by algorithm
+fn display_results(
+    algorithms: &[&dyn AlgorithmRunner],
+    input_sizes: &[usize],
+    grouped: &[Vec<Vec<BenchmarkResult>>],
+    runs: usize,
+    filter_outliers: bool,
+) {
     for (algo_idx, algo) in algorithms.iter().enumerate() {
         print_algo_info_box(*algo);
 
-        // Count how many sizes have results for this algorithm
-        let sizes_with_results = grouped[algo_idx]
-            .iter()
-            .filter(|results| !results.is_empty())
-            .count();
+        let sizes_with_results = grouped[algo_idx].iter().filter(|r| !r.is_empty()).count();
         let show_size = sizes_with_results > 1;
 
         for (size_idx, &input_size) in input_sizes.iter().enumerate() {
@@ -283,3 +307,87 @@ fn compute_result(
         result_sample,
     }
 }
+
+// ============================================================================
+// Execution strategies
+// ============================================================================
+
+/// Context for each closure during execution
+struct ClosureContext {
+    algo_idx: usize,
+    size_idx: usize,
+    input_size: usize,
+    name: &'static str,
+    description: &'static str,
+}
+
+type ClosureVec<'a> = Vec<(ClosureContext, Box<dyn FnMut() -> (Measurement, Option<f64>) + 'a>)>;
+
+/// Execute all tasks with CPU pinned once for the entire session.
+/// Minimal overhead - ideal for short-running benchmarks.
+fn execute_with_global_pin(
+    closures: &mut ClosureVec,
+    tasks: Vec<(usize, usize)>,
+    measurements: &mut [Vec<Measurement>],
+    result_samples: &mut [Option<f64>],
+) {
+    let total_tasks = tasks.len();
+    let report_interval = (total_tasks / 10).max(1);
+
+    // Pin once for entire execution
+    let _pin = CpuPinGuard::new();
+
+    for (completed, (closure_idx, _)) in tasks.into_iter().enumerate() {
+        let (_, closure) = &mut closures[closure_idx];
+
+        // Timing happens inside the closure
+        let (elapsed_time, result) = closure();
+
+        measurements[closure_idx].push(elapsed_time);
+        if result.is_some() {
+            result_samples[closure_idx] = result;
+        }
+
+        if (completed + 1) % report_interval == 0 {
+            let pct = ((completed + 1) * 100) / total_tasks;
+            print!("\r  Progress: {}%   ", pct);
+            use std::io::Write;
+            let _ = std::io::stdout().flush();
+        }
+    }
+}
+
+/// Execute all tasks with CPU pinned/unpinned for each call.
+/// More accurate for long-running benchmarks that might migrate cores.
+fn execute_with_per_call_pin(
+    closures: &mut ClosureVec,
+    tasks: Vec<(usize, usize)>,
+    measurements: &mut [Vec<Measurement>],
+    result_samples: &mut [Option<f64>],
+) {
+    let total_tasks = tasks.len();
+    let report_interval = (total_tasks / 10).max(1);
+
+    for (completed, (closure_idx, _)) in tasks.into_iter().enumerate() {
+        let (_, closure) = &mut closures[closure_idx];
+
+        // Pin for this execution only
+        let _pin = CpuPinGuard::new();
+
+        // Timing happens inside the closure
+        let (elapsed_time, result) = closure();
+
+        measurements[closure_idx].push(elapsed_time);
+        if result.is_some() {
+            result_samples[closure_idx] = result;
+        }
+
+        if (completed + 1) % report_interval == 0 {
+            let pct = ((completed + 1) * 100) / total_tasks;
+            print!("\r  Progress: {}%   ", pct);
+            use std::io::Write;
+            let _ = std::io::stdout().flush();
+        }
+    }
+}
+
