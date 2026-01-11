@@ -251,6 +251,7 @@ fn compute_result(
             name: name.to_string(),
             description: description.to_string(),
             avg_time: Duration::ZERO,
+            avg_nanos_f64: 0.0,
             median_time: Duration::ZERO,
             min_time: Duration::ZERO,
             max_time: Duration::ZERO,
@@ -277,13 +278,12 @@ fn compute_result(
     let median_val = trimmed[trimmed.len() / 2];
 
     let sum: u64 = trimmed.iter().sum();
-    let avg_val = sum / trimmed.len() as u64;
-
-    let avg_f = avg_val as f64;
+    let avg_nanos_f64 = sum as f64 / trimmed.len() as f64;
+    let avg_val = avg_nanos_f64 as u64;
     let variance: f64 = trimmed
         .iter()
         .map(|&v| {
-            let diff = v as f64 - avg_f;
+            let diff = v as f64 - avg_nanos_f64;
             diff * diff
         })
         .sum::<f64>()
@@ -294,6 +294,7 @@ fn compute_result(
         name: name.to_string(),
         description: description.to_string(),
         avg_time: Duration::from_nanos(avg_val),
+        avg_nanos_f64,
         median_time: Duration::from_nanos(median_val),
         min_time: Duration::from_nanos(min_val),
         max_time: Duration::from_nanos(max_val),

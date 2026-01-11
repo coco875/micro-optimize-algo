@@ -88,6 +88,27 @@ pub fn format_measurement(d: std::time::Duration) -> String {
     }
 }
 
+/// Format a Duration with floating-point precision (for averages)
+pub fn format_measurement_precise(nanos_f64: f64) -> String {
+    #[cfg(all(feature = "cpu_cycles", not(feature = "use_time")))]
+    {
+        format!("{:.2} {}", nanos_f64, unit_name())
+    }
+
+    #[cfg(any(not(feature = "cpu_cycles"), feature = "use_time"))]
+    {
+        if nanos_f64 >= 1_000_000_000.0 {
+            format!("{:.3}s", nanos_f64 / 1_000_000_000.0)
+        } else if nanos_f64 >= 1_000_000.0 {
+            format!("{:.3}ms", nanos_f64 / 1_000_000.0)
+        } else if nanos_f64 >= 1_000.0 {
+            format!("{:.3}µs", nanos_f64 / 1_000.0)
+        } else {
+            format!("{:.2}ns", nanos_f64)
+        }
+    }
+}
+
 /// Measures a single expression, returning (measurement, result).
 /// Use inside variant closures to eliminate Fn trait overhead from timing.
 ///

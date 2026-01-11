@@ -169,7 +169,7 @@ pub fn print_results_table(results: &[BenchmarkResult], size: usize, runs: usize
                 result.name.clone()
             };
 
-        let time_str = crate::utils::bench::format_measurement(result.avg_time);
+        let time_str = crate::utils::bench::format_measurement_precise(result.avg_nanos_f64);
         let min_str = crate::utils::bench::format_measurement(result.min_time);
         let max_str = crate::utils::bench::format_measurement(result.max_time);
 

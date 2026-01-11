@@ -67,6 +67,8 @@ pub struct VariantResult {
     pub description: String,
     /// Average measurement (as Duration for compatibility)
     pub avg_time: Duration,
+    /// Precise average in nanoseconds/cycles as f64
+    pub avg_nanos_f64: f64,
     /// Median measurement
     pub median_time: Duration,
     /// Minimum measurement
@@ -158,6 +160,7 @@ fn compute_variant_result(
             name: name.to_string(),
             description: description.to_string(),
             avg_time: Duration::ZERO,
+            avg_nanos_f64: 0.0,
             median_time: Duration::ZERO,
             min_time: Duration::ZERO,
             max_time: Duration::ZERO,
@@ -177,13 +180,13 @@ fn compute_variant_result(
     let median_ns = sorted[sorted.len() / 2];
 
     let sum: u64 = nanos.iter().sum();
-    let avg_ns = sum / nanos.len() as u64;
-    let avg_f = avg_ns as f64;
+    let avg_nanos_f64 = sum as f64 / nanos.len() as f64;
+    let avg_ns = avg_nanos_f64 as u64;
 
     let variance: f64 = nanos
         .iter()
         .map(|&n| {
-            let diff = n as f64 - avg_f;
+            let diff = n as f64 - avg_nanos_f64;
             diff * diff
         })
         .sum::<f64>()
@@ -194,6 +197,7 @@ fn compute_variant_result(
         name: name.to_string(),
         description: description.to_string(),
         avg_time: Duration::from_nanos(avg_ns),
+        avg_nanos_f64,
         median_time: Duration::from_nanos(median_ns),
         min_time: Duration::from_nanos(min_ns),
         max_time: Duration::from_nanos(max_ns),
