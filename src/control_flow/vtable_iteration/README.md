@@ -36,17 +36,17 @@ Compares different iteration strategies over a heterogeneous pool of polymorphic
 
 ## Key Findings
 
-1. **Segmented pools are ~2.4x faster** than one-type-at-time because:
+1. **Segmented pools**:
    - Better cache locality (objects of same type are contiguous)
    - Direct function calls instead of indirect vtable dispatch
    - Single pass over data
 
-2. **One-type-at-time is slowest** because:
+2. **One-type-at-time**:
    - Makes 7 passes over the entire buffer (one per vtable type)
    - Poor cache utilization from repeated traversals
    - Comparison overhead for each object
 
-3. **Vtable contiguous is middle ground**:
+3. **Vtable contiguous**:
    - Single pass over data
    - Indirect dispatch overhead via vtable pointer
 
