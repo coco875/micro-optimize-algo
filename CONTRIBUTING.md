@@ -1,11 +1,38 @@
 # Contributing
 
+## Algorithm Structure
+
+Each algorithm follows a standard directory structure:
+
+```
+src/<category>/<algorithm>/
+├── README.md           # Overview, variants description, key findings
+├── mod.rs              # AlgorithmRunner implementation
+├── code/
+│   ├── mod.rs          # get_variants() function, exports
+│   ├── original.rs     # Reference implementation
+│   ├── <variant>.rs    # Optimized variants
+│   └── c_impl.rs       # Optional: C FFI bindings
+└── test/
+    └── mod.rs          # Verification tests
+```
+
+### Key Components
+
+1. **`code/mod.rs`**: Exports `get_variants()` returning `Vec<VariantInfo<FnType>>` with all available variants.
+2. **`mod.rs`**: Implements `AlgorithmRunner` trait for integration with the benchmark runner.
+3. **`test/mod.rs`**: Contains `verify_all()` function to validate all variants produce correct results.
+4. **`README.md`**: Documents the algorithm, variants, and key findings.
+
 ## Adding New Algorithms
 
 1.  Create a new directory in `src/<category>/<algorithm>/`.
 2.  Implement the algorithm in Rust (`code/original.rs`) and any optimized variants.
-3.  Add benchmarks in `bench/mod.rs`.
-4.  Register the algorithm in `src/registry.rs`.
+3.  Add `get_variants()` in `code/mod.rs` returning all variant functions.
+4.  Implement `AlgorithmRunner` in `mod.rs`.
+5.  Add verification tests in `test/mod.rs`.
+6.  Register the algorithm in `src/registry.rs`.
+7.  Add `README.md` with documentation.
 
 ## C Implementations
 
@@ -65,14 +92,13 @@ In your `code/mod.rs`, register the C variants conditionally using `C_IMPL_AVAIL
 ```rust
 pub mod c_impl;
 
-// ... inside available_variants() ...
+// ... inside get_variants() ...
 
 if c_impl::C_IMPL_AVAILABLE {
     variants.push(VariantInfo {
         name: "c-algo",
         description: "C Implementation",
         function: c_impl::my_algo_c_wrapper,
-        compiler: c_impl::COMPILER_NAME,
     });
 }
 ```
