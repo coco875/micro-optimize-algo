@@ -63,9 +63,3 @@ vtable_iteration/
 └── test/
     └── mod.rs          # Verification tests
 ```
-
-## Adding New Variants
-
-1. Create a new struct implementing `ObjectPool` trait
-2. Add it to `get_variants()` in `variants.rs`
-3. Tests and runner adapt automatically
