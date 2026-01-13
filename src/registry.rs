@@ -102,6 +102,7 @@ pub fn build_registry() -> AlgorithmRegistry {
     registry.register(crate::random::xoroshiro::XoroshiroRunner);
     registry.register(crate::control_flow::call_vs_branch::CallVsBranchRunner);
     registry.register(crate::control_flow::elseif_vs_jumptable::ElseIfVsJumpTableRunner);
+    registry.register(crate::control_flow::vtable_iteration::VTableIterationRunner);
 
     registry
 }
