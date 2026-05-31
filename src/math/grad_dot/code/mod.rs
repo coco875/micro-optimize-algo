@@ -1,7 +1,8 @@
 //! Implementations of the gradient dot product algorithm.
 
-use std::simd::prelude::*;
 use crate::utils::VariantInfo;
+use std::hint::black_box;
+use std::simd::prelude::*;
 
 /// Gradient vectors shared between Perlin and simplex noise (from vanilla `SimplexNoise.GRADIENT`).
 pub const GRADIENT: [[f64; 3]; 16] = [
@@ -113,9 +114,7 @@ pub fn grad_dot_original(hashes: &[usize], x: &[f64], y: &[f64], z: &[f64]) -> f
         .zip(x.iter())
         .zip(y.iter())
         .zip(z.iter())
-        .map(|(((h, &x_val), &y_val), &z_val)| {
-            grad_dot(*h, x_val, y_val, z_val)
-        })
+        .map(|(((h, &x_val), &y_val), &z_val)| black_box(grad_dot(*h, x_val, y_val, z_val)))
         .sum()
 }
 
@@ -130,18 +129,23 @@ pub fn grad_dot_simd_portable_x4(hashes: &[usize], x: &[f64], y: &[f64], z: &[f6
 
     for c in 0..chunks {
         let idx = c * 4;
-        let h = [hashes[idx], hashes[idx + 1], hashes[idx + 2], hashes[idx + 3]];
+        let h = [
+            hashes[idx],
+            hashes[idx + 1],
+            hashes[idx + 2],
+            hashes[idx + 3],
+        ];
         let vx = f64x4::from_slice(&x[idx..idx + 4]);
         let vy = f64x4::from_slice(&y[idx..idx + 4]);
         let vz = f64x4::from_slice(&z[idx..idx + 4]);
-        sum_v += grad_dot_4x_loop(h, vx, vy, vz);
+        sum_v += black_box(grad_dot_4x_loop(h, vx, vy, vz));
     }
 
     let mut total = sum_v.reduce_sum();
 
     // Handle remainder elements
     for i in (chunks * 4)..hashes.len() {
-        total += grad_dot(hashes[i], x[i], y[i], z[i]);
+        total += black_box(grad_dot(hashes[i], x[i], y[i], z[i]));
     }
 
     total
@@ -158,18 +162,23 @@ pub fn grad_dot_simd_transpose_x4(hashes: &[usize], x: &[f64], y: &[f64], z: &[f
 
     for c in 0..chunks {
         let idx = c * 4;
-        let h = [hashes[idx], hashes[idx + 1], hashes[idx + 2], hashes[idx + 3]];
+        let h = [
+            hashes[idx],
+            hashes[idx + 1],
+            hashes[idx + 2],
+            hashes[idx + 3],
+        ];
         let vx = f64x4::from_slice(&x[idx..idx + 4]);
         let vy = f64x4::from_slice(&y[idx..idx + 4]);
         let vz = f64x4::from_slice(&z[idx..idx + 4]);
-        sum_v += grad_dot_4x(h, vx, vy, vz);
+        sum_v += black_box(grad_dot_4x(h, vx, vy, vz));
     }
 
     let mut total = sum_v.reduce_sum();
 
     // Handle remainder elements
     for i in (chunks * 4)..hashes.len() {
-        total += grad_dot(hashes[i], x[i], y[i], z[i]);
+        total += black_box(grad_dot(hashes[i], x[i], y[i], z[i]));
     }
 
     total
