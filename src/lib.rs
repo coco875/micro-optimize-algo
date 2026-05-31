@@ -2,6 +2,8 @@
 //!
 //! A collection of algorithms that have been micro-optimized using various techniques.
 
+#![feature(portable_simd)]
+
 pub mod control_flow;
 pub mod math;
 pub mod random;
@@ -20,6 +22,7 @@ pub use utils::timer::PinStrategy;
 /// Re-export commonly used items
 pub mod prelude {
     pub use crate::math::dot_product;
+    pub use crate::math::grad_dot;
     pub use crate::registry::{build_registry, AlgorithmRegistry, AlgorithmRunner};
 }
 

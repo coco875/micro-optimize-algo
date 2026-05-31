@@ -99,6 +99,7 @@ pub fn build_registry() -> AlgorithmRegistry {
 
     // Register all algorithms here
     registry.register(crate::math::dot_product::DotProductRunner);
+    registry.register(crate::math::grad_dot::GradDotRunner);
     registry.register(crate::random::xoroshiro::XoroshiroRunner);
     registry.register(crate::control_flow::call_vs_branch::CallVsBranchRunner);
     registry.register(crate::control_flow::elseif_vs_jumptable::ElseIfVsJumpTableRunner);
