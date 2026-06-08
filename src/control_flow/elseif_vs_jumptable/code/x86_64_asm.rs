@@ -54,7 +54,51 @@
 //! | Worst case | Last case | All equal | All equal |
 //! | Random data perf | Poor | Good | Good |
 
+use crate::control_flow::elseif_vs_jumptable::ElseIfVsJumpTableVariant;
+use crate::variant;
 use std::arch::asm;
+
+#[variant(group = "elseif_vs_jumptable")]
+#[cfg(target_arch = "x86_64")]
+pub struct X86_64AsmBranch;
+
+#[cfg(target_arch = "x86_64")]
+impl ElseIfVsJumpTableVariant for X86_64AsmBranch {
+    fn name() -> &'static str {
+        "x86_64-asm-branch"
+    }
+    fn compute(op: u8, val: u32) -> u32 {
+        dispatch_branch(op, val)
+    }
+}
+
+#[variant(group = "elseif_vs_jumptable")]
+#[cfg(target_arch = "x86_64")]
+pub struct X86_64AsmJumpTable;
+
+#[cfg(target_arch = "x86_64")]
+impl ElseIfVsJumpTableVariant for X86_64AsmJumpTable {
+    fn name() -> &'static str {
+        "x86_64-asm-jumptable"
+    }
+    fn compute(op: u8, val: u32) -> u32 {
+        dispatch_jumptable(op, val)
+    }
+}
+
+#[variant(group = "elseif_vs_jumptable")]
+#[cfg(target_arch = "x86_64")]
+pub struct X86_64AsmBranchless;
+
+#[cfg(target_arch = "x86_64")]
+impl ElseIfVsJumpTableVariant for X86_64AsmBranchless {
+    fn name() -> &'static str {
+        "x86_64-asm-branchless"
+    }
+    fn compute(op: u8, val: u32) -> u32 {
+        dispatch_branchless(op, val)
+    }
+}
 
 /// Dispatch using chained if-else with conditional BRANCHES (Jcc instructions)
 ///

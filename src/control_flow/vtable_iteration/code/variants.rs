@@ -1,3 +1,4 @@
+#![allow(clippy::missing_safety_doc)]
 //! Iteration variants to compare.
 
 use super::objects::*;
@@ -8,19 +9,16 @@ use std::alloc::{alloc, dealloc, Layout};
 // ============================================================================
 
 /// Trait for object pool implementations
-pub trait ObjectPool {
+pub trait ObjectPool: Send {
     /// Create a new pool with the given size and seed
-    fn new(count: usize, seed: u64) -> Self where Self: Sized;
+    fn new(count: usize, seed: u64) -> Self
+    where
+        Self: Sized;
     /// Iterate over all objects and return a sum
     fn iterate(&mut self) -> u64;
 }
-
-/// Variant info for pool implementations
-pub struct PoolVariant {
-    pub name: &'static str,
-    pub description: &'static str,
-    pub create: fn(usize, u64) -> Box<dyn ObjectPool>,
-}
+use crate::control_flow::vtable_iteration::VTableIterationVariant;
+use crate::variant;
 
 // ============================================================================
 // Common data generator
@@ -33,7 +31,10 @@ pub struct ObjectGenerator {
 
 impl ObjectGenerator {
     pub fn new(seed: u64) -> Self {
-        Self { rng: seed, index: 0 }
+        Self {
+            rng: seed,
+            index: 0,
+        }
     }
 }
 
@@ -72,12 +73,14 @@ pub struct RawVTablePool {
     entries: Vec<usize>,
 }
 
+unsafe impl Send for RawVTablePool {}
+
 impl ObjectPool for RawVTablePool {
     fn new(count: usize, seed: u64) -> Self {
         let padded_size = PADDED_OBJECT_SIZE;
         let total_size = padded_size * count;
         let layout = Layout::from_size_align(total_size, MAX_OBJECT_ALIGN).unwrap();
-        
+
         let buffer = unsafe { alloc(layout) };
         let mut entries = Vec::with_capacity(count);
         let generator = ObjectGenerator::new(seed);
@@ -89,7 +92,11 @@ impl ObjectPool for RawVTablePool {
             entries.push(offset);
         }
 
-        Self { buffer, layout, entries }
+        Self {
+            buffer,
+            layout,
+            entries,
+        }
     }
 
     fn iterate(&mut self) -> u64 {
@@ -151,7 +158,7 @@ impl ObjectPool for SegmentedPool {
 
     fn iterate(&mut self) -> u64 {
         let mut sum: u64 = 0;
-        
+
         for obj in &mut self.pool_a {
             sum = sum.wrapping_add(unsafe { process_a(obj as *mut ObjectA as *mut u8) });
         }
@@ -187,12 +194,14 @@ pub struct OneTimeVTablePool {
     entries: Vec<usize>,
 }
 
+unsafe impl Send for OneTimeVTablePool {}
+
 impl ObjectPool for OneTimeVTablePool {
     fn new(count: usize, seed: u64) -> Self {
         let padded_size = PADDED_OBJECT_SIZE;
         let total_size = padded_size * count;
         let layout = Layout::from_size_align(total_size, MAX_OBJECT_ALIGN).unwrap();
-        
+
         let buffer = unsafe { alloc(layout) };
         let mut entries = Vec::with_capacity(count);
         let generator = ObjectGenerator::new(seed);
@@ -204,7 +213,11 @@ impl ObjectPool for OneTimeVTablePool {
             entries.push(offset);
         }
 
-        Self { buffer, layout, entries }
+        Self {
+            buffer,
+            layout,
+            entries,
+        }
     }
 
     fn iterate(&mut self) -> u64 {
@@ -233,23 +246,38 @@ impl Drop for OneTimeVTablePool {
 // Variant registry
 // ============================================================================
 
-/// Returns all available pool variants
-pub fn get_variants() -> Vec<PoolVariant> {
-    vec![
-        PoolVariant {
-            name: "vtable_contiguous",
-            description: "Contiguous buffer with vtable dispatch",
-            create: |size, seed| Box::new(RawVTablePool::new(size, seed)),
-        },
-        PoolVariant {
-            name: "segmented_pools",
-            description: "Separate pools per type, direct calls",
-            create: |size, seed| Box::new(SegmentedPool::new(size, seed)),
-        },
-        PoolVariant {
-            name: "one_type_at_time",
-            description: "Process one vtable type at a time",
-            create: |size, seed| Box::new(OneTimeVTablePool::new(size, seed)),
-        },
-    ]
+#[variant(group = "vtable_iteration")]
+pub struct VTableContiguous;
+
+impl VTableIterationVariant for VTableContiguous {
+    fn name() -> &'static str {
+        "vtable_contiguous"
+    }
+    fn create(size: usize, seed: u64) -> Box<dyn ObjectPool + Send> {
+        Box::new(RawVTablePool::new(size, seed))
+    }
+}
+
+#[variant(group = "vtable_iteration")]
+pub struct SegmentedPools;
+
+impl VTableIterationVariant for SegmentedPools {
+    fn name() -> &'static str {
+        "segmented_pools"
+    }
+    fn create(size: usize, seed: u64) -> Box<dyn ObjectPool + Send> {
+        Box::new(SegmentedPool::new(size, seed))
+    }
+}
+
+#[variant(group = "vtable_iteration")]
+pub struct OneTypeAtTime;
+
+impl VTableIterationVariant for OneTypeAtTime {
+    fn name() -> &'static str {
+        "one_type_at_time"
+    }
+    fn create(size: usize, seed: u64) -> Box<dyn ObjectPool + Send> {
+        Box::new(OneTimeVTablePool::new(size, seed))
+    }
 }

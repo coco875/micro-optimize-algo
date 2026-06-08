@@ -1,67 +1,45 @@
 //! Tests for call vs branch implementations
 
-use super::code::{get_variants, original};
+#[cfg(test)]
+mod tests {
+    use crate::control_flow::call_vs_branch::code::original::{Original, RustInline};
+    use crate::control_flow::call_vs_branch::CallVsBranchVariant;
 
-/// Verify all variants produce the same results as the original
-pub fn verify_all() -> Result<(), String> {
-    let test_values: Vec<u32> = vec![0, 1, 2, 5, 10, 50, 100, 255, 500, 1000, 10000];
+    fn verify_val(v: u32, expected: u32) {
+        assert_eq!(Original::compute(v), expected);
+        assert_eq!(RustInline::compute(v), expected);
 
-    for variant in get_variants() {
-        if variant.name == "original" {
-            continue;
-        }
-
-        for &value in &test_values {
-            let expected = original::process_with_calls(value);
-            let actual = (variant.function)(value);
-
-            if actual != expected {
-                return Err(format!(
-                    "Variant '{}' failed for value {}: expected {}, got {}",
-                    variant.name, value, expected, actual
-                ));
-            }
+        #[cfg(target_arch = "x86_64")]
+        {
+            use crate::control_flow::call_vs_branch::code::x86_64_asm::{
+                X86_64AsmBranch, X86_64AsmCall, X86_64AsmInline,
+            };
+            assert_eq!(X86_64AsmCall::compute(v), expected);
+            assert_eq!(X86_64AsmBranch::compute(v), expected);
+            assert_eq!(X86_64AsmInline::compute(v), expected);
         }
     }
 
-    Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
     #[test]
     fn test_all_variants() {
-        verify_all().expect("All variants should produce correct results");
+        let test_values: Vec<u32> = vec![0, 1, 2, 5, 10, 50, 100, 255, 500, 1000, 10000];
+        for &v in &test_values {
+            let step1 = v.wrapping_mul(2);
+            let step2 = step1.wrapping_add(10);
+            let expected = step2.wrapping_mul(step2);
+            verify_val(v, expected);
+        }
     }
 
     #[test]
     fn test_expected_computation() {
-        // Verify the computation: square(add_ten(double(x)))
         // For x = 5: double(5) = 10, add_ten(10) = 20, square(20) = 400
-        let variants = get_variants();
-        for variant in &variants {
-            assert_eq!(
-                (variant.function)(5),
-                400,
-                "{}: process(5) should be 400",
-                variant.name
-            );
-        }
+        verify_val(5, 400);
     }
 
     #[test]
     fn test_zero() {
         // For x = 0: double(0) = 0, add_ten(0) = 10, square(10) = 100
-        let variants = get_variants();
-        for variant in &variants {
-            assert_eq!(
-                (variant.function)(0),
-                100,
-                "{}: process(0) should be 100",
-                variant.name
-            );
-        }
+        verify_val(0, 100);
     }
 }

@@ -32,3 +32,20 @@ pub const COMPILER_NAME: Option<&str> = None;
 pub fn xoroshiro_c_wrapper(_s0: &mut u64, _s1: &mut u64) -> u64 {
     panic!("C implementation not compiled (requires GCC/Clang)")
 }
+
+use crate::random::xoroshiro::XoroshiroVariant;
+use crate::variant;
+
+#[cfg(c_implementation_active)]
+#[variant(group = "xoroshiro")]
+pub struct COriginal;
+
+#[cfg(c_implementation_active)]
+impl XoroshiroVariant for COriginal {
+    fn name() -> &'static str {
+        "c-original"
+    }
+    fn compute(s0: &mut u64, s1: &mut u64) -> u64 {
+        xoroshiro_c_wrapper(s0, s1)
+    }
+}

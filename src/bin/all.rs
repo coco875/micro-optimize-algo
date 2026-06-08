@@ -1,78 +1,49 @@
 //! Generic CLI for running algorithms.
 //!
 //! Usage:
-//!   micro-algo              # Run all algorithms
-//!   micro-algo --list       # List available algorithms
-//!   micro-algo dot_product  # Run specific algorithm
-//!   micro-algo --help       # Show help
+//!   micro-algo                    # Run according to config/defaults
+//!   micro-algo --config config.toml # Run with specific config
+//!   micro-algo --runs 30           # Override runs count
+//!   micro-algo --csv results.csv   # Save output to CSV
 
-use micro_optimize_algo::registry::build_registry;
-use micro_optimize_algo::PinStrategy;
+use micro_optimize_algo::utils::runner::Config;
 use std::env;
+use std::fs;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
-    let registry = build_registry();
 
-    // Parse arguments
-    let mut show_list = false;
-    let mut show_help = false;
-    let mut sample_sizes: Vec<usize> = vec![64, 256, 1024, 4096, 16384];
-    let mut runs: usize = 30;
-    let mut seed: Option<u64> = None;
+    let mut config_path: Option<String> = None;
+    let mut runs_override: Option<u64> = None;
     let mut csv_path: Option<String> = None;
-    let mut algorithm_filter: Option<String> = None;
-    let mut filter_outliers: bool = false;
-    let mut pin_strategy: PinStrategy = PinStrategy::PerExecution;
+    let mut filter_outliers = false;
+    let mut filter_scenario: Option<Vec<String>> = None;
+    let mut filter_variant: Option<Vec<String>> = None;
+    let mut filter_tag: Option<Vec<String>> = None;
 
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
-            "--list" | "-l" => show_list = true,
-            "--help" | "-h" => show_help = true,
-            "--sizes" => {
+            "--config" | "-c" => {
                 i += 1;
                 if i < args.len() {
-                    sample_sizes = args[i]
-                        .split(',')
-                        .filter_map(|s| s.trim().parse().ok())
-                        .collect();
-                    if sample_sizes.is_empty() {
-                        eprintln!("Error: --sizes requires valid comma-separated integers");
+                    config_path = Some(args[i].clone());
+                } else {
+                    eprintln!("Error: --config requires a path");
+                    std::process::exit(1);
+                }
+            }
+            "--runs" | "--iter" | "-r" => {
+                i += 1;
+                if i < args.len() {
+                    if let Ok(n) = args[i].parse::<u64>() {
+                        runs_override = Some(n);
+                    } else {
+                        eprintln!("Error: --runs requires a positive integer");
                         std::process::exit(1);
                     }
                 } else {
-                    eprintln!("Error: --sizes requires a value (e.g., --sizes 64,256,1024)");
-                    std::process::exit(1);
-                }
-            }
-            "--iter" | "--runs" | "-r" => {
-                i += 1;
-                if i < args.len() {
-                    runs = match args[i].parse() {
-                        Ok(n) if n > 0 => n,
-                        _ => {
-                            eprintln!("Error: --iter requires a positive integer");
-                            std::process::exit(1);
-                        }
-                    };
-                } else {
-                    eprintln!("Error: --iter requires a value (e.g., --iter 1000)");
-                    std::process::exit(1);
-                }
-            }
-            "--seed" => {
-                i += 1;
-                if i < args.len() {
-                    seed = match args[i].parse() {
-                        Ok(n) => Some(n),
-                        Err(_) => {
-                            eprintln!("Error: --seed requires a valid integer");
-                            std::process::exit(1);
-                        }
-                    };
-                } else {
-                    eprintln!("Error: --seed requires a value (e.g., --seed 12345)");
+                    eprintln!("Error: --runs requires a value");
                     std::process::exit(1);
                 }
             }
@@ -81,90 +52,108 @@ fn main() {
                 if i < args.len() {
                     csv_path = Some(args[i].clone());
                 } else {
-                    eprintln!("Error: --csv requires a file path (e.g., --csv results.csv)");
+                    eprintln!("Error: --csv requires a path");
                     std::process::exit(1);
                 }
             }
             "--filter" | "-f" => {
                 filter_outliers = true;
             }
-            "--pin" => {
+            "--scenario" => {
                 i += 1;
                 if i < args.len() {
-                    pin_strategy = match args[i].as_str() {
-                        "global" => PinStrategy::Global,
-                        "per-call" | "per-execution" => PinStrategy::PerExecution,
-                        other => {
-                            eprintln!("Error: Unknown pin strategy '{}'. Use 'global' or 'per-call'.", other);
-                            std::process::exit(1);
-                        }
-                    };
+                    filter_scenario =
+                        Some(args[i].split(',').map(|s| s.trim().to_string()).collect());
                 } else {
-                    eprintln!("Error: --pin requires a value (e.g., --pin global or --pin per-call)");
+                    eprintln!("Error: --scenario requires a comma-separated list");
                     std::process::exit(1);
                 }
             }
+            "--variant" => {
+                i += 1;
+                if i < args.len() {
+                    filter_variant =
+                        Some(args[i].split(',').map(|s| s.trim().to_string()).collect());
+                } else {
+                    eprintln!("Error: --variant requires a comma-separated list");
+                    std::process::exit(1);
+                }
+            }
+            "--tag" | "-t" => {
+                i += 1;
+                if i < args.len() {
+                    filter_tag = Some(args[i].split(',').map(|s| s.trim().to_string()).collect());
+                } else {
+                    eprintln!("Error: --tag requires a comma-separated list");
+                    std::process::exit(1);
+                }
+            }
+            "--help" | "-h" => {
+                println!("Usage: micro-algo [options]");
+                println!("Options:");
+                println!("  -c, --config <file>   Load config from TOML file (default: config.toml if exists)");
+                println!("  -r, --runs <number>   Override number of sample runs");
+                println!("  --csv <file>          Path to save CSV output");
+                println!("  -f, --filter          Filter timing outliers");
+                println!("  --scenario <list>     Comma-separated list of scenarios to run");
+                println!("  --variant <list>      Comma-separated list of variants to run");
+                println!("  -t, --tag <list>      Comma-separated list of tags to run");
+                println!("  -h, --help            Show this help menu");
+                return;
+            }
             arg if !arg.starts_with('-') => {
-                algorithm_filter = Some(arg.to_string());
+                // If it is a positional argument, treat it as a scenario filter for backward compatibility
+                let list = filter_scenario.get_or_insert_with(Vec::new);
+                list.push(arg.to_string());
             }
             _ => {
                 eprintln!("Error: Unknown option '{}'", args[i]);
-                eprintln!("Use --help for usage information.");
                 std::process::exit(1);
             }
         }
         i += 1;
     }
 
-    if show_help {
-        micro_optimize_algo::tui::print_help();
-        return;
-    }
-
-    if show_list {
-        micro_optimize_algo::tui::print_available_algorithms(&registry);
-        return;
-    }
-
-    micro_optimize_algo::tui::print_header();
-
-    match algorithm_filter {
-        Some(name) => {
-            // Running a single algorithm
-            match registry.find(&name) {
-                Some(algo) => {
-                    let algos = vec![algo];
-                    micro_optimize_algo::run_benchmarks(
-                        &algos,
-                        &sample_sizes,
-                        runs,
-                        seed,
-                        csv_path.as_deref(),
-                        filter_outliers,
-                        pin_strategy,
-                    );
-                }
-                None => {
-                    eprintln!("Algorithm '{}' not found.", name);
-                    eprintln!("Available: {:?}", registry.list_names());
-                    std::process::exit(1);
-                }
-            }
+    // Try loading config.toml by default if no path is given
+    let actual_config_path = config_path.or_else(|| {
+        if std::path::Path::new("config.toml").exists() {
+            Some("config.toml".to_string())
+        } else {
+            None
         }
-        None => {
-            // Running all algorithms
-            let all_algos: Vec<_> = registry.all().iter().map(|a| a.as_ref()).collect();
-            micro_optimize_algo::run_benchmarks(
-                &all_algos,
-                &sample_sizes,
-                runs,
-                seed,
-                csv_path.as_deref(),
-                filter_outliers,
-                pin_strategy,
-            );
-        }
+    });
+
+    let mut config = if let Some(path) = actual_config_path {
+        println!("Loading config from: {}", path);
+        let content = fs::read_to_string(&path).unwrap_or_else(|e| {
+            eprintln!("Error: Could not read config file '{}': {}", path, e);
+            std::process::exit(1);
+        });
+        toml::from_str::<Config>(&content).unwrap_or_else(|e| {
+            eprintln!("Error: Failed to parse TOML config from '{}': {}", path, e);
+            std::process::exit(1);
+        })
+    } else {
+        Config::default()
+    };
+
+    // Apply CLI overrides
+    if let Some(r) = runs_override {
+        config.sample = Some(r);
+    }
+    if let Some(fs) = filter_scenario {
+        config.filter_scenario = Some(fs);
+    }
+    if let Some(fv) = filter_variant {
+        config.filter_variant = Some(fv);
+    }
+    if let Some(ft) = filter_tag {
+        config.filter_tag = Some(ft);
     }
 
-    println!("Note: Speedup is relative to the first variant (usually 'original').");
+    micro_optimize_algo::utils::runner::run_benchmarks(
+        config,
+        csv_path.as_deref(),
+        filter_outliers,
+    );
 }

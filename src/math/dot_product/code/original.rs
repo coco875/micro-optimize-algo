@@ -26,3 +26,18 @@ pub fn dot_product_original(a: &[f32], b: &[f32]) -> f32 {
 
     a.iter().zip(b.iter()).map(|(x, y)| x * y).sum()
 }
+
+use crate::math::dot_product::DotProductVariant;
+use crate::variant;
+
+#[variant(group = "dot_product")]
+pub struct Original;
+
+impl DotProductVariant for Original {
+    fn name() -> &'static str {
+        "original"
+    }
+    fn compute(a: &[f32], b: &[f32]) -> f32 {
+        dot_product_original(a, b)
+    }
+}

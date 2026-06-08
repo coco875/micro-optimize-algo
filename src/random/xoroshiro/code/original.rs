@@ -11,3 +11,18 @@ pub fn xoroshiro_original(seed_lo: &mut u64, seed_hi: &mut u64) -> u64 {
 
     result
 }
+
+use crate::random::xoroshiro::XoroshiroVariant;
+use crate::variant;
+
+#[variant(group = "xoroshiro")]
+pub struct Original;
+
+impl XoroshiroVariant for Original {
+    fn name() -> &'static str {
+        "original"
+    }
+    fn compute(s0: &mut u64, s1: &mut u64) -> u64 {
+        xoroshiro_original(s0, s1)
+    }
+}

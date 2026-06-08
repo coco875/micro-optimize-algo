@@ -5,30 +5,27 @@
 //! - Binary search (for sparse cases)
 //! - Linear if-else chain (for few cases)
 
-/// Simulates an opcode dispatcher that multiplies a value by different constants
-/// based on the operation code.
-///
-/// Opcodes:
-/// - 0: identity (×1)
-/// - 1: double (×2)
-/// - 2: triple (×3)
-/// - 3: quadruple (×4)
-/// - 4: ×5
-/// - 5: ×6
-/// - 6: ×7
-/// - 7: ×8
-/// - _: zero (invalid opcode)
-#[inline(never)]
-pub fn dispatch_operation(opcode: u8, value: u32) -> u32 {
-    match opcode {
-        0 => value,
-        1 => value * 2,
-        2 => value * 3,
-        3 => value * 4,
-        4 => value * 5,
-        5 => value * 6,
-        6 => value * 7,
-        7 => value * 8,
-        _ => 0, // Invalid opcode
+use crate::control_flow::elseif_vs_jumptable::ElseIfVsJumpTableVariant;
+use crate::variant;
+
+#[variant(group = "elseif_vs_jumptable")]
+pub struct Original;
+
+impl ElseIfVsJumpTableVariant for Original {
+    fn name() -> &'static str {
+        "original"
+    }
+    fn compute(op: u8, val: u32) -> u32 {
+        match op {
+            0 => val,
+            1 => val * 2,
+            2 => val * 3,
+            3 => val * 4,
+            4 => val * 5,
+            5 => val * 6,
+            6 => val * 7,
+            7 => val * 8,
+            _ => 0, // Invalid opcode
+        }
     }
 }

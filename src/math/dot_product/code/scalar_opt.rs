@@ -45,3 +45,18 @@ pub fn dot_product_scalar_opt(a: &[f32], b: &[f32]) -> f32 {
     // Combine all partial sums
     (sum0 + sum1) + (sum2 + sum3)
 }
+
+use crate::math::dot_product::DotProductVariant;
+use crate::variant;
+
+#[variant(group = "dot_product")]
+pub struct ScalarOpt;
+
+impl DotProductVariant for ScalarOpt {
+    fn name() -> &'static str {
+        "scalar_opt"
+    }
+    fn compute(a: &[f32], b: &[f32]) -> f32 {
+        dot_product_scalar_opt(a, b)
+    }
+}

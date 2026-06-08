@@ -1,3 +1,4 @@
+#![allow(clippy::missing_safety_doc)]
 //! Object definitions with manual C repr vtables.
 //!
 //! Each object has a `vtable` field at the beginning that points to a struct
@@ -161,13 +162,7 @@ pub static VTABLE_F: VTable = VTable { process: process_f };
 pub static VTABLE_G: VTable = VTable { process: process_g };
 
 pub static VTABLE_PTRS: [&VTable; 7] = [
-    &VTABLE_A,
-    &VTABLE_B,
-    &VTABLE_C,
-    &VTABLE_D,
-    &VTABLE_E,
-    &VTABLE_F,
-    &VTABLE_G,
+    &VTABLE_A, &VTABLE_B, &VTABLE_C, &VTABLE_D, &VTABLE_E, &VTABLE_F, &VTABLE_G,
 ];
 
 // ============================================================================
@@ -244,7 +239,7 @@ impl ObjectG {
 // ============================================================================
 
 /// Calls the process function via the object's vtable
-/// 
+///
 /// # Safety
 /// Pointer must point to a valid object with a valid vtable
 #[inline]
@@ -302,4 +297,5 @@ pub const MAX_OBJECT_SIZE: usize = const_array_max(&OBJECT_SIZES);
 pub const MAX_OBJECT_ALIGN: usize = const_array_max(&OBJECT_ALIGNS);
 
 /// Padded size that can hold any object type (aligned)
-pub const PADDED_OBJECT_SIZE: usize = (MAX_OBJECT_SIZE + MAX_OBJECT_ALIGN - 1) & !(MAX_OBJECT_ALIGN - 1);
+pub const PADDED_OBJECT_SIZE: usize =
+    (MAX_OBJECT_SIZE + MAX_OBJECT_ALIGN - 1) & !(MAX_OBJECT_ALIGN - 1);

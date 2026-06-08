@@ -1,411 +1,437 @@
-//! Benchmark runner: execution engine and data structures.
+//! Benchmark runner: execution engine and data structures using generic RunIds.
 
+use serde::Deserialize;
+use std::collections::HashMap;
+use std::io::Write;
 use std::time::Duration;
 
-use crate::registry::{AlgorithmRunner, BenchmarkResult};
-use crate::utils::bench::{shuffle, time_seed, to_nanos, Measurement};
-#[cfg(all(feature = "cpu_cycles", not(feature = "use_time")))]
-use crate::utils::cpu_affinity::CpuPinGuard;
-use crate::utils::timer::{PinStrategy, TimingConfig};
-use crate::utils::tui::{print_algo_info_box, print_results_table, sort_variants};
+use crate::registry::{get_run_metadata, init_session, run_scenario};
+use crate::utils::scenario::OtherMetric;
 
-/// Raw timing data for a single variant (used for CSV export)
-pub struct RawTimingData {
-    pub algo_name: String,
-    pub variant_name: String,
-    pub input_size: usize,
-    pub avg_nanos: u64,
-    pub result_sample: Option<f64>,
-}
+#[derive(Clone, Copy, Debug)]
+pub struct RunId(pub u128);
 
-/// Export timing data to CSV file
-pub fn export_csv(path: &str, data: &[RawTimingData]) -> std::io::Result<()> {
-    use std::io::Write;
-
-    let mut file = std::fs::File::create(path)?;
-
-    writeln!(file, "algorithm,variant,compiler,input_size,avg_time_ns,result")?;
-
-    for entry in data {
-        let compiler = crate::utils::C_COMPILER_NAME.unwrap_or(
-            if entry.variant_name.starts_with("c-") {
-                "Unknown"
-            } else {
-                ""
-            },
-        );
-
-        writeln!(
-            file,
-            "{},{},{},{},{},{}",
-            entry.algo_name,
-            entry.variant_name,
-            compiler,
-            entry.input_size,
-            entry.avg_nanos,
-            entry.result_sample.map(|v| v.to_string()).unwrap_or_default()
-        )?;
+impl RunId {
+    pub fn new(scenario_idx: u16, variant_idx: u16, param_idx: u32, seed: u64) -> Self {
+        let val = (scenario_idx as u128)
+            | ((variant_idx as u128) << 16)
+            | ((param_idx as u128) << 32)
+            | ((seed as u128) << 64);
+        Self(val)
     }
 
-    Ok(())
+    pub fn unpack(self) -> (u16, u16, u32, u64) {
+        (
+            (self.0 & 0xFFFF) as u16,
+            ((self.0 >> 16) & 0xFFFF) as u16,
+            ((self.0 >> 32) & 0xFFFFFFFF) as u32,
+            ((self.0 >> 64) & 0xFFFF_FFFF_FFFF_FFFF) as u64,
+        )
+    }
 }
 
-/// Run benchmarks for one or more algorithms with global randomization.
-///
-/// This is the unified entry point for all benchmarking. It:
-/// 1. Collects ALL closures from ALL algorithms for ALL sizes into a flat Vec
-/// 2. Generates tasks (closure_idx, run_idx) and shuffles globally
-/// 3. Executes with CPU pinning
-/// 4. Groups results and displays/exports them
-pub fn run_benchmarks(
-    algorithms: &[&dyn AlgorithmRunner],
-    input_sizes: &[usize],
-    runs: usize,
-    seed: Option<u64>,
-    csv_path: Option<&str>,
-    filter_outliers: bool,
-    pin_strategy: PinStrategy,
-) {
-    let effective_seed = seed.unwrap_or_else(time_seed);
-    let config = TimingConfig {
-        runs_per_variant: runs,
-        warmup_iterations: 10,
-        pin_strategy,
-    };
+pub struct RunMetadata {
+    pub group: &'static str,
+    pub scenario: &'static str,
+    pub variant: &'static str,
+    pub context: String,
+    pub seed: u64,
+    pub tags: &'static [&'static str],
+}
 
-    print_config_info(seed, effective_seed, filter_outliers, &config);
+#[derive(Deserialize, Debug, Clone, Default)]
+pub struct Config {
+    pub sample: Option<u64>,
+    pub filter_scenario: Option<Vec<String>>,
+    pub filter_variant: Option<Vec<String>>,
+    pub filter_tag: Option<Vec<String>>,
+    #[serde(flatten)]
+    pub custom: Option<toml::Table>,
+}
 
-    let mut closures = collect_closures(algorithms, input_sizes);
-    if closures.is_empty() {
-        println!("  No variants to benchmark.");
+impl Config {
+    pub fn get_table(&self, key: &str) -> Option<&toml::Table> {
+        self.custom.as_ref()?.get(key)?.as_table()
+    }
+}
+
+pub struct RawTimingData {
+    pub group: String,
+    pub scenario: String,
+    pub variant: String,
+    pub context: String,
+    pub avg_nanos: u64,
+    pub other_measurement: String,
+}
+
+struct VariantStats {
+    name: &'static str,
+    avg_nanos_f64: f64,
+    min_time: Duration,
+    max_time: Duration,
+    cv: f64,
+}
+
+fn variant_sort_key(name: &str) -> (u8, String) {
+    let name_lower = name.to_lowercase();
+    if name_lower == "original" {
+        (0, String::new())
+    } else if name_lower.contains("asm")
+        || name_lower.contains("simd")
+        || name_lower.contains("avx")
+        || name_lower.contains("neon")
+    {
+        (3, name_lower)
+    } else if name_lower.starts_with("c-") || name_lower.starts_with("c_") {
+        (2, name_lower)
+    } else {
+        (1, name_lower)
+    }
+}
+
+#[allow(clippy::type_complexity)]
+pub fn run_benchmarks(config: Config, csv_path: Option<&str>, filter_outliers: bool) {
+    let session = init_session(&config);
+    if session.run_ids.is_empty() {
+        println!("  No scenarios to benchmark.");
         return;
     }
 
-    warmup_closures(&mut closures, config.warmup_iterations);
-    let tasks = generate_shuffled_tasks(closures.len(), config.runs_per_variant, effective_seed);
-    let (measurements, result_samples) = execute_tasks(&mut closures, tasks, &config);
+    let total = session.run_ids.len();
+    println!("  Running {} tasks (globally randomized)...", total);
 
-    let (grouped, raw_data) = group_results(
-        closures, measurements, result_samples, algorithms, 
-        input_sizes.len(), config.runs_per_variant, filter_outliers
-    );
+    let start = std::time::Instant::now();
+    let mut last_pct = 0;
+
+    struct RunResult {
+        run_id: RunId,
+        elapsed: u64,
+        other: OtherMetric,
+    }
+
+    let mut results = Vec::with_capacity(total);
+
+    for (i, &run_id) in session.run_ids.iter().enumerate() {
+        let pct = (i + 1) * 100 / total;
+        if pct >= last_pct + 10 || i + 1 == total {
+            last_pct = pct;
+            let elapsed_sec = start.elapsed().as_secs_f64();
+            let eta = elapsed_sec / (i + 1) as f64 * (total - i - 1) as f64;
+            eprintln!(
+                "[{pct:3}%] {}/{} elapsed: {:.1}s ETA: {:.1}s",
+                i + 1,
+                total,
+                elapsed_sec,
+                eta
+            );
+        }
+
+        let (elapsed, other) = run_scenario(&session, run_id);
+        results.push(RunResult {
+            run_id,
+            elapsed,
+            other,
+        });
+    }
+
+    println!("\n  Completed! Analyzing results...");
+
+    // Group results by (group_name, scenario_name, context)
+    // We map: (group, scenario, context) -> variant_name -> Vec<(elapsed, other, seed)>
+    type GroupKey = (String, String, String);
+    let mut grouped: HashMap<GroupKey, HashMap<String, Vec<(u64, OtherMetric, u64)>>> =
+        HashMap::new();
+
+    for r in &results {
+        let meta = get_run_metadata(&session, r.run_id);
+        let key = (
+            meta.group.to_string(),
+            meta.scenario.to_string(),
+            meta.context.clone(),
+        );
+        grouped
+            .entry(key)
+            .or_default()
+            .entry(meta.variant.to_string())
+            .or_default()
+            .push((r.elapsed, r.other.clone(), meta.seed));
+    }
+
+    let mut csv_data: Vec<RawTimingData> = Vec::new();
+
+    // Sort group keys for stable display
+    let mut group_keys: Vec<_> = grouped.keys().cloned().collect();
+    group_keys.sort_by(|a, b| {
+        if a.0 != b.0 {
+            a.0.cmp(&b.0)
+        } else if a.1 != b.1 {
+            a.1.cmp(&b.1)
+        } else {
+            let a_num = a.2.parse::<usize>().ok();
+            let b_num = b.2.parse::<usize>().ok();
+            match (a_num, b_num) {
+                (Some(an), Some(bn)) => an.cmp(&bn),
+                _ => a.2.cmp(&b.2),
+            }
+        }
+    });
+
+    let mut current_group_scenario = None;
+
+    for key in group_keys {
+        let (group, scenario, context) = key.clone();
+
+        if current_group_scenario != Some((group.clone(), scenario.clone())) {
+            current_group_scenario = Some((group.clone(), scenario.clone()));
+            let title = format!("Algorithm: {}::{}", group, scenario);
+            let border = "─".repeat(title.len() + 4);
+            println!("\n┌{}┐", border);
+            println!("│  {}  │", title);
+            println!("└{}┘", border);
+        }
+
+        let variants_map = &grouped[&key];
+        let mut unique_variants: Vec<_> = variants_map.keys().cloned().collect();
+        unique_variants.sort_by_key(|v| variant_sort_key(v));
+
+        let mut variant_stats = Vec::new();
+        let mut last_other_measurement = OtherMetric::None;
+
+        for var_name in &unique_variants {
+            let runs_data = &variants_map[var_name];
+            let mut times: Vec<_> = runs_data.iter().map(|(t, _, _)| *t).collect();
+            times.sort();
+
+            let trimmed = if filter_outliers && times.len() > 10 {
+                let trim_count = (times.len() as f64 * 0.005).ceil() as usize;
+                let start = trim_count.min(times.len() / 4);
+                let end = times.len().saturating_sub(trim_count).max(start + 1);
+                &times[start..end]
+            } else {
+                &times[..]
+            };
+
+            let min_val = trimmed[0];
+            let max_val = trimmed[trimmed.len() - 1];
+            let sum: u64 = trimmed.iter().sum();
+            let avg_nanos_f64 = sum as f64 / trimmed.len() as f64;
+
+            let variance: f64 = trimmed
+                .iter()
+                .map(|&v| {
+                    let diff = v as f64 - avg_nanos_f64;
+                    diff * diff
+                })
+                .sum::<f64>()
+                / (trimmed.len() - 1).max(1) as f64;
+            let std_dev_ns = variance.sqrt() as u64;
+
+            let cv = if avg_nanos_f64 > 0.0 {
+                std_dev_ns as f64 / avg_nanos_f64
+            } else {
+                0.0
+            };
+
+            // Find a static variant name reference from metadata
+            let static_var_name = runs_data
+                .first()
+                .map(|_| {
+                    // Just map back to the static string in one of the RunResults
+                    let sample_run = results
+                        .iter()
+                        .find(|r| {
+                            let m = get_run_metadata(&session, r.run_id);
+                            m.group == group
+                                && m.scenario == scenario
+                                && m.context == context
+                                && m.variant == var_name
+                        })
+                        .unwrap();
+                    get_run_metadata(&session, sample_run.run_id).variant
+                })
+                .unwrap_or("unknown");
+
+            variant_stats.push(VariantStats {
+                name: static_var_name,
+                avg_nanos_f64,
+                min_time: Duration::from_nanos(min_val),
+                max_time: Duration::from_nanos(max_val),
+                cv,
+            });
+
+            if let Some((_, other, _)) = runs_data.first() {
+                last_other_measurement = other.clone();
+            }
+        }
+
+        // Correctness verification
+        let mut all_variants_match = true;
+        let mut mismatch_info = None;
+        let mut verified_sample = None;
+
+        // Group runs by seed to compare variants
+        let mut runs_by_seed: HashMap<u64, Vec<(&str, OtherMetric)>> = HashMap::new();
+        for var_name in &unique_variants {
+            for (_, other, seed) in &variants_map[var_name] {
+                runs_by_seed
+                    .entry(*seed)
+                    .or_default()
+                    .push((var_name.as_str(), other.clone()));
+            }
+        }
+
+        for (seed, var_vals) in &runs_by_seed {
+            if !var_vals.is_empty() {
+                let first_val = &var_vals[0].1;
+                if verified_sample.is_none() {
+                    verified_sample = Some(first_val.clone());
+                }
+                for val in var_vals {
+                    if val.1 != *first_val {
+                        all_variants_match = false;
+                        mismatch_info = Some((
+                            *seed,
+                            var_vals[0].0.to_string(),
+                            format!("{}", first_val),
+                            val.0.to_string(),
+                            format!("{}", val.1),
+                        ));
+                        break;
+                    }
+                }
+            }
+            if !all_variants_match {
+                break;
+            }
+        }
+
+        // Print results table
+        print_results_table(
+            &variant_stats,
+            &context,
+            config.sample.unwrap_or(10) as usize,
+            filter_outliers,
+            all_variants_match,
+            mismatch_info,
+            verified_sample.as_ref(),
+        );
+
+        // Save CSV data
+        for stats in &variant_stats {
+            csv_data.push(RawTimingData {
+                group: group.clone(),
+                scenario: scenario.clone(),
+                variant: stats.name.to_string(),
+                context: context.clone(),
+                avg_nanos: stats.avg_nanos_f64 as u64,
+                other_measurement: format!("{}", last_other_measurement),
+            });
+        }
+    }
 
     if let Some(path) = csv_path {
-        export_csv_with_message(path, &raw_data);
+        if let Err(e) = export_csv(path, &csv_data) {
+            eprintln!("  Warning: Failed to export CSV: {}", e);
+        } else {
+            println!("  Raw data exported to: {}", path);
+        }
     }
-
-    display_results(algorithms, input_sizes, &grouped, config.runs_per_variant, filter_outliers);
 }
 
-// ============================================================================
-// Helper functions for run_benchmarks
-// ============================================================================
-
-fn print_config_info(seed: Option<u64>, effective_seed: u64, filter_outliers: bool, config: &TimingConfig) {
-    println!("  Seed: {} ({})", effective_seed, if seed.is_some() { "user-provided" } else { "time-based" });
-    if filter_outliers {
-        println!("  Outlier filtering: enabled (trimming 1% extremes)");
+fn export_csv(path: &str, data: &[RawTimingData]) -> std::io::Result<()> {
+    let mut file = std::fs::File::create(path)?;
+    writeln!(
+        file,
+        "group,scenario,variant,context,avg_time_ns,other_measurement"
+    )?;
+    for entry in data {
+        writeln!(
+            file,
+            "{},{},{},{},{},{}",
+            entry.group,
+            entry.scenario,
+            entry.variant,
+            entry.context,
+            entry.avg_nanos,
+            entry.other_measurement
+        )?;
     }
-    println!("  Pin strategy: {:?}", config.pin_strategy);
+    Ok(())
 }
 
-fn collect_closures<'a>(
-    algorithms: &[&'a dyn AlgorithmRunner],
-    input_sizes: &[usize],
-) -> ClosureVec<'a> {
-    println!("  Collecting benchmark closures...");
-    let mut closures = Vec::new();
+fn print_results_table(
+    results: &[VariantStats],
+    context: &str,
+    runs: usize,
+    filtered: bool,
+    verified: bool,
+    mismatch: Option<(u64, String, String, String, String)>,
+    verified_sample: Option<&OtherMetric>,
+) {
+    if results.is_empty() {
+        return;
+    }
 
-    for (algo_idx, algo) in algorithms.iter().enumerate() {
-        for (size_idx, &input_size) in input_sizes.iter().enumerate() {
-            for variant in algo.get_variant_closures(input_size) {
-                closures.push((
-                    ClosureContext {
-                        algo_idx,
-                        size_idx,
-                        input_size,
-                        name: variant.name,
-                        description: variant.description,
-                    },
-                    variant.run,
-                ));
+    let variant_col_width = 25;
+    let table_width = 86;
+
+    let baseline_time = results.first().map(|r| r.avg_nanos_f64).unwrap_or(1.0);
+    let filter_note = if filtered { " (filtered)" } else { "" };
+
+    println!(
+        "  Context / Size: {} ({} runs{})",
+        context, runs, filter_note
+    );
+    println!("  {}", "─".repeat(table_width));
+    println!(
+        "  {:<v_width$} {:>12} {:>12} {:>12} {:>10} {:>9}",
+        "Variant",
+        "Average",
+        "Min",
+        "Max",
+        "Speedup",
+        "CV",
+        v_width = variant_col_width
+    );
+    println!("  {}", "─".repeat(table_width));
+
+    for result in results {
+        let speedup = baseline_time / result.avg_nanos_f64;
+
+        let time_str = crate::utils::bench::format_measurement_precise(result.avg_nanos_f64);
+        let min_str = crate::utils::bench::format_measurement(result.min_time);
+        let max_str = crate::utils::bench::format_measurement(result.max_time);
+
+        println!(
+            "  {:<v_width$} {:>12} {:>12} {:>12} {:>9.2}x {:>8.2}%",
+            result.name,
+            time_str,
+            min_str,
+            max_str,
+            speedup,
+            result.cv * 100.0,
+            v_width = variant_col_width
+        );
+    }
+    println!("  {}", "─".repeat(table_width));
+
+    if verified {
+        match verified_sample {
+            Some(OtherMetric::None) | None => {
+                println!("  Other Measurements: N/A");
+            }
+            Some(metric) => {
+                println!(
+                    "  Other Measurements: Verified (All variants match: {})",
+                    metric
+                );
             }
         }
-    }
-    closures
-}
-
-fn warmup_closures(closures: &mut ClosureVec, iterations: usize) {
-    use std::hint::black_box;
-    println!("  Warming up {} variants...", closures.len());
-    for (_, closure) in closures.iter_mut() {
-        for _ in 0..iterations {
-            let _ = black_box(closure());
-        }
-    }
-}
-
-fn generate_shuffled_tasks(num_closures: usize, runs: usize, seed: u64) -> Vec<(usize, usize)> {
-    let mut tasks: Vec<(usize, usize)> = (0..num_closures)
-        .flat_map(|c| (0..runs).map(move |r| (c, r)))
-        .collect();
-    shuffle(&mut tasks, seed);
-    println!("  Running {} tasks (globally randomized)...", tasks.len());
-    tasks
-}
-
-fn execute_tasks(
-    closures: &mut ClosureVec,
-    tasks: Vec<(usize, usize)>,
-    config: &TimingConfig,
-) -> (Vec<Vec<Measurement>>, Vec<Option<f64>>) {
-    let runs = config.runs_per_variant;
-    let mut measurements: Vec<Vec<Measurement>> = vec![Vec::with_capacity(runs); closures.len()];
-    let mut result_samples: Vec<Option<f64>> = vec![None; closures.len()];
-
-    match config.pin_strategy {
-        PinStrategy::Global => execute_with_global_pin(closures, tasks, &mut measurements, &mut result_samples),
-        PinStrategy::PerExecution => execute_with_per_call_pin(closures, tasks, &mut measurements, &mut result_samples),
-    }
-    
-    println!("\r  Completed!          ");
-    println!();
-    (measurements, result_samples)
-}
-
-fn group_results(
-    closures: ClosureVec,
-    mut measurements: Vec<Vec<Measurement>>,
-    result_samples: Vec<Option<f64>>,
-    algorithms: &[&dyn AlgorithmRunner],
-    num_sizes: usize,
-    runs: usize,
-    filter_outliers: bool,
-) -> (Vec<Vec<Vec<BenchmarkResult>>>, Vec<RawTimingData>) {
-    let num_algos = algorithms.len();
-    let mut grouped: Vec<Vec<Vec<BenchmarkResult>>> = vec![vec![Vec::new(); num_sizes]; num_algos];
-    let mut raw_data: Vec<RawTimingData> = Vec::new();
-
-    for (closure_idx, (ctx, _)) in closures.into_iter().enumerate() {
-        let timing_values = std::mem::take(&mut measurements[closure_idx]);
-        let result_sample = result_samples[closure_idx];
-
-        let result = compute_result(&timing_values, ctx.name, ctx.description, runs, result_sample, filter_outliers);
-
-        raw_data.push(RawTimingData {
-            algo_name: algorithms[ctx.algo_idx].name().to_string(),
-            variant_name: result.name.clone(),
-            input_size: ctx.input_size,
-            avg_nanos: result.avg_time.as_nanos() as u64,
-            result_sample,
-        });
-
-        grouped[ctx.algo_idx][ctx.size_idx].push(result);
-    }
-    (grouped, raw_data)
-}
-
-fn export_csv_with_message(path: &str, data: &[RawTimingData]) {
-    match export_csv(path, data) {
-        Ok(()) => println!("  Raw data exported to: {}", path),
-        Err(e) => eprintln!("  Warning: Failed to export CSV: {}", e),
+    } else if let Some((seed, var1, val1, var2, val2)) = mismatch {
+        println!("  ⚠️  WARNING: Other measurements mismatch!");
+        println!("     Seed: 0x{:X}", seed);
+        println!("     - {:<15}: {}", var1, val1);
+        println!("     - {:<15}: {}", var2, val2);
     }
     println!();
 }
-
-fn display_results(
-    algorithms: &[&dyn AlgorithmRunner],
-    input_sizes: &[usize],
-    grouped: &[Vec<Vec<BenchmarkResult>>],
-    runs: usize,
-    filter_outliers: bool,
-) {
-    for (algo_idx, algo) in algorithms.iter().enumerate() {
-        print_algo_info_box(*algo);
-
-        let sizes_with_results = grouped[algo_idx].iter().filter(|r| !r.is_empty()).count();
-        let show_size = sizes_with_results > 1;
-
-        for (size_idx, &input_size) in input_sizes.iter().enumerate() {
-            let mut results = grouped[algo_idx][size_idx].clone();
-            sort_variants(&mut results);
-
-            if !results.is_empty() {
-                print_results_table(&results, input_size, runs, show_size, filter_outliers);
-            }
-        }
-    }
-}
-
-/// Compute statistics from measurements (Measurement type varies by feature)
-fn compute_result(
-    values: &[Measurement],
-    name: &'static str,
-    description: &'static str,
-    iterations: usize,
-    result_sample: Option<f64>,
-    filter_outliers: bool,
-) -> BenchmarkResult {
-    if values.is_empty() {
-        return BenchmarkResult {
-            name: name.to_string(),
-            description: description.to_string(),
-            avg_time: Duration::ZERO,
-            avg_nanos_f64: 0.0,
-            median_time: Duration::ZERO,
-            min_time: Duration::ZERO,
-            max_time: Duration::ZERO,
-            std_dev: Duration::ZERO,
-            iterations,
-            result_sample,
-        };
-    }
-
-    let mut nanos: Vec<u64> = values.iter().map(|m| to_nanos(*m)).collect();
-    nanos.sort();
-    
-    let trimmed = if filter_outliers && nanos.len() > 10 {
-        let trim_count = (nanos.len() as f64 * 0.005).ceil() as usize;
-        let start = trim_count.min(nanos.len() / 4);
-        let end = nanos.len().saturating_sub(trim_count).max(start + 1);
-        &nanos[start..end]
-    } else {
-        &nanos[..]
-    };
-
-    let min_val = trimmed[0];
-    let max_val = trimmed[trimmed.len() - 1];
-    let median_val = trimmed[trimmed.len() / 2];
-
-    let sum: u64 = trimmed.iter().sum();
-    let avg_nanos_f64 = sum as f64 / trimmed.len() as f64;
-    let avg_val = avg_nanos_f64 as u64;
-    let variance: f64 = trimmed
-        .iter()
-        .map(|&v| {
-            let diff = v as f64 - avg_nanos_f64;
-            diff * diff
-        })
-        .sum::<f64>()
-        / (trimmed.len() - 1).max(1) as f64;
-    let std_dev_val = variance.sqrt() as u64;
-
-    BenchmarkResult {
-        name: name.to_string(),
-        description: description.to_string(),
-        avg_time: Duration::from_nanos(avg_val),
-        avg_nanos_f64,
-        median_time: Duration::from_nanos(median_val),
-        min_time: Duration::from_nanos(min_val),
-        max_time: Duration::from_nanos(max_val),
-        std_dev: Duration::from_nanos(std_dev_val),
-        iterations,
-        result_sample,
-    }
-}
-
-// ============================================================================
-// Execution strategies
-// ============================================================================
-
-/// Context for each closure during execution
-struct ClosureContext {
-    algo_idx: usize,
-    size_idx: usize,
-    input_size: usize,
-    name: &'static str,
-    description: &'static str,
-}
-
-type ClosureVec<'a> = Vec<(ClosureContext, Box<dyn FnMut() -> (Measurement, Option<f64>) + 'a>)>;
-
-/// CPU pinned once for entire session - minimal overhead (only when cpu_cycles)
-#[cfg(all(feature = "cpu_cycles", not(feature = "use_time")))]
-fn execute_with_global_pin(
-    closures: &mut ClosureVec,
-    tasks: Vec<(usize, usize)>,
-    measurements: &mut [Vec<Measurement>],
-    result_samples: &mut [Option<f64>],
-) {
-    let _pin = CpuPinGuard::new();
-    execute_loop(closures, tasks, measurements, result_samples);
-}
-
-/// No-op when not measuring CPU cycles
-#[cfg(any(not(feature = "cpu_cycles"), feature = "use_time"))]
-fn execute_with_global_pin(
-    closures: &mut ClosureVec,
-    tasks: Vec<(usize, usize)>,
-    measurements: &mut [Vec<Measurement>],
-    result_samples: &mut [Option<f64>],
-) {
-    execute_loop(closures, tasks, measurements, result_samples);
-}
-
-/// CPU pinned per call - more accurate for long benchmarks (only when cpu_cycles)
-#[cfg(all(feature = "cpu_cycles", not(feature = "use_time")))]
-fn execute_with_per_call_pin(
-    closures: &mut ClosureVec,
-    tasks: Vec<(usize, usize)>,
-    measurements: &mut [Vec<Measurement>],
-    result_samples: &mut [Option<f64>],
-) {
-    let total_tasks = tasks.len();
-    let report_interval = (total_tasks / 10).max(1);
-
-    for (completed, (closure_idx, _)) in tasks.into_iter().enumerate() {
-        let (_, closure) = &mut closures[closure_idx];
-        let _pin = CpuPinGuard::new();
-        let (elapsed_time, result) = closure();
-
-        measurements[closure_idx].push(elapsed_time);
-        if result.is_some() {
-            result_samples[closure_idx] = result;
-        }
-
-        report_progress(completed, total_tasks, report_interval);
-    }
-}
-
-/// No-op pinning when not measuring CPU cycles
-#[cfg(any(not(feature = "cpu_cycles"), feature = "use_time"))]
-fn execute_with_per_call_pin(
-    closures: &mut ClosureVec,
-    tasks: Vec<(usize, usize)>,
-    measurements: &mut [Vec<Measurement>],
-    result_samples: &mut [Option<f64>],
-) {
-    execute_loop(closures, tasks, measurements, result_samples);
-}
-
-fn execute_loop(
-    closures: &mut ClosureVec,
-    tasks: Vec<(usize, usize)>,
-    measurements: &mut [Vec<Measurement>],
-    result_samples: &mut [Option<f64>],
-) {
-    let total_tasks = tasks.len();
-    let report_interval = (total_tasks / 10).max(1);
-
-    for (completed, (closure_idx, _)) in tasks.into_iter().enumerate() {
-        let (_, closure) = &mut closures[closure_idx];
-        let (elapsed_time, result) = closure();
-
-        measurements[closure_idx].push(elapsed_time);
-        if result.is_some() {
-            result_samples[closure_idx] = result;
-        }
-
-        report_progress(completed, total_tasks, report_interval);
-    }
-}
-
-fn report_progress(completed: usize, total: usize, interval: usize) {
-    if (completed + 1) % interval == 0 {
-        let pct = ((completed + 1) * 100) / total;
-        print!("\r  Progress: {}%   ", pct);
-        use std::io::Write;
-        let _ = std::io::stdout().flush();
-    }
-}
-

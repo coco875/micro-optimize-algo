@@ -86,3 +86,20 @@ pub fn dot_product_x86_64_avx2(a: &[f32], b: &[f32]) -> f32 {
     // Fall back to basic implementation
     a.iter().zip(b.iter()).map(|(x, y)| x * y).sum()
 }
+
+use crate::math::dot_product::DotProductVariant;
+use crate::variant;
+
+#[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+#[variant(group = "dot_product")]
+pub struct Avx2;
+
+#[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+impl DotProductVariant for Avx2 {
+    fn name() -> &'static str {
+        "x86_64-avx2"
+    }
+    fn compute(a: &[f32], b: &[f32]) -> f32 {
+        dot_product_x86_64_avx2(a, b)
+    }
+}

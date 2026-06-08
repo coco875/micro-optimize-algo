@@ -72,3 +72,48 @@ pub fn dot_product_c_scalar_opt(_a: &[f32], _b: &[f32]) -> f32 {
 pub fn dot_product_c_x86_64_sse2(_a: &[f32], _b: &[f32]) -> f32 {
     panic!("C implementation not compiled (requires GCC/Clang)")
 }
+
+use crate::math::dot_product::DotProductVariant;
+use crate::variant;
+
+#[cfg(c_implementation_active)]
+#[variant(group = "dot_product")]
+pub struct COriginal;
+
+#[cfg(c_implementation_active)]
+impl DotProductVariant for COriginal {
+    fn name() -> &'static str {
+        "c-original"
+    }
+    fn compute(a: &[f32], b: &[f32]) -> f32 {
+        dot_product_c_original(a, b)
+    }
+}
+
+#[cfg(c_implementation_active)]
+#[variant(group = "dot_product")]
+pub struct CScalarOpt;
+
+#[cfg(c_implementation_active)]
+impl DotProductVariant for CScalarOpt {
+    fn name() -> &'static str {
+        "c-scalar_opt"
+    }
+    fn compute(a: &[f32], b: &[f32]) -> f32 {
+        dot_product_c_scalar_opt(a, b)
+    }
+}
+
+#[cfg(all(c_implementation_active, target_arch = "x86_64"))]
+#[variant(group = "dot_product")]
+pub struct CX86_64Sse2;
+
+#[cfg(all(c_implementation_active, target_arch = "x86_64"))]
+impl DotProductVariant for CX86_64Sse2 {
+    fn name() -> &'static str {
+        "c-x86_64-sse2"
+    }
+    fn compute(a: &[f32], b: &[f32]) -> f32 {
+        dot_product_c_x86_64_sse2(a, b)
+    }
+}

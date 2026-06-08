@@ -1,101 +1,87 @@
 //! # Gradient Dot Product Algorithm
 //!
-//! Computes the dot product of Perlin gradient vectors and position vectors
-//! over slices of inputs.
-//!
-//! `grad_dot(hash, x, y, z) = g[0]*x + g[1]*y + g[2]*z`
+//! Computes the dot product of Perlin gradient vectors and position vectors over slices of inputs.
 
 pub mod code;
 pub mod test;
 
 pub use code::*;
 
-use crate::registry::{AlgorithmRunner, VariantClosure};
-use rand::Rng;
-use std::sync::Arc;
+use crate::scenario;
+use crate::utils::{scenario::OtherMetric, Scenario, ScenarioDefinition};
 
-/// Runner for the gradient dot product algorithm
-pub struct GradDotRunner;
+/// Trait defining a gradient dot product variant statically
+pub trait GradDotVariant: Send + 'static {
+    /// Variant name
+    fn name() -> &'static str;
+    /// Computation function
+    fn compute(hashes: &[usize], x: &[f64], y: &[f64], z: &[f64]) -> f64;
+}
 
-impl AlgorithmRunner for GradDotRunner {
-    fn name(&self) -> &'static str {
-        "grad_dot"
+/// Scenario implementation for the gradient dot product algorithm generic over variant V.
+#[scenario(group = "grad_dot", tags = "math, noise, 3d noise")]
+pub struct GradDotScenario<V> {
+    hashes: Vec<usize>,
+    x: Vec<f64>,
+    y: Vec<f64>,
+    z: Vec<f64>,
+    result: Option<f64>,
+    _marker: std::marker::PhantomData<V>,
+}
+
+impl<V: GradDotVariant> Scenario for GradDotScenario<V> {
+    fn task(&mut self) {
+        self.result = Some(std::hint::black_box(V::compute(
+            &self.hashes,
+            &self.x,
+            &self.y,
+            &self.z,
+        )));
     }
 
-    fn description(&self) -> &'static str {
-        "Computes Perlin gradient dot products over slices of positions"
+    fn other_metric(&self) -> OtherMetric {
+        self.result
+            .map(OtherMetric::Precision)
+            .unwrap_or(OtherMetric::None)
+    }
+}
+
+impl<V: GradDotVariant> ScenarioDefinition<V> for GradDotScenario<V> {
+    type Param = usize;
+
+    fn new(size: usize, seed: u64) -> Self {
+        let mut rng = crate::utils::bench::SeededRng::new(seed);
+        let hashes = (0..size)
+            .map(|_| rng.next_u32_range(256) as usize)
+            .collect();
+        let x = (0..size).map(|_| rng.next_f32_range() as f64).collect();
+        let y = (0..size).map(|_| rng.next_f32_range() as f64).collect();
+        let z = (0..size).map(|_| rng.next_f32_range() as f64).collect();
+        Self {
+            hashes,
+            x,
+            y,
+            z,
+            result: None,
+            _marker: std::marker::PhantomData,
+        }
     }
 
-    fn category(&self) -> &'static str {
-        "math"
-    }
-
-    fn available_variants(&self) -> Vec<&'static str> {
-        code::available_variants().iter().map(|v| v.name).collect()
-    }
-
-    fn get_variant_closures<'a>(&'a self, size: usize) -> Vec<VariantClosure<'a>> {
-        // Generate test data
-        let mut rng = rand::rng();
-        let hashes: Arc<Vec<usize>> = Arc::new((0..size).map(|_| rng.random_range(0..256)).collect());
-        let x: Arc<Vec<f64>> = Arc::new((0..size).map(|_| rng.random_range(-1.0..1.0)).collect());
-        let y: Arc<Vec<f64>> = Arc::new((0..size).map(|_| rng.random_range(-1.0..1.0)).collect());
-        let z: Arc<Vec<f64>> = Arc::new((0..size).map(|_| rng.random_range(-1.0..1.0)).collect());
-
-        code::available_variants()
-            .into_iter()
-            .map(|v| {
-                let hashes = Arc::clone(&hashes);
-                let x = Arc::clone(&x);
-                let y = Arc::clone(&y);
-                let z = Arc::clone(&z);
-                let func = v.function;
-
-                VariantClosure {
-                    name: v.name,
-                    description: v.description,
-                    run: Box::new(move || {
-                        // Timing inside closure eliminates Fn trait overhead
-                        let (elapsed, result) = crate::measure!(func(&hashes, &x, &y, &z));
-                        (elapsed, Some(result))
-                    }),
+    fn generate_params(config: &crate::utils::runner::Config) -> Vec<usize> {
+        if let Some(table) = config.get_table("grad_dot") {
+            if let Some(sizes_val) = table.get("sizes") {
+                if let Some(arr) = sizes_val.as_array() {
+                    return arr
+                        .iter()
+                        .filter_map(|v| v.as_integer().map(|i| i as usize))
+                        .collect();
                 }
-            })
-            .collect()
-    }
-
-    fn verify(&self) -> Result<(), String> {
-        let mut rng = rand::rng();
-        let size = 1023;
-        let hashes: Vec<usize> = (0..size).map(|_| rng.random_range(0..256)).collect();
-        let x: Vec<f64> = (0..size).map(|_| rng.random_range(-1.0..1.0)).collect();
-        let y: Vec<f64> = (0..size).map(|_| rng.random_range(-1.0..1.0)).collect();
-        let z: Vec<f64> = (0..size).map(|_| rng.random_range(-1.0..1.0)).collect();
-
-        let variants = code::available_variants();
-        let original_variant = variants
-            .iter()
-            .find(|v| v.name == "original")
-            .ok_or("No 'original' variant found for reference")?;
-
-        let expected = (original_variant.function)(&hashes, &x, &y, &z);
-
-        for variant in &variants {
-            if variant.name == "original" {
-                continue;
-            }
-
-            let result = (variant.function)(&hashes, &x, &y, &z);
-            let diff = (result - expected).abs();
-
-            if diff > 1e-9 {
-                return Err(format!(
-                    "Variant '{}' failed verification. Expected {}, got {}, diff {}",
-                    variant.name, expected, result, diff
-                ));
             }
         }
+        vec![64, 256, 1024, 4096, 16384]
+    }
 
-        Ok(())
+    fn format_param(param: &usize) -> String {
+        param.to_string()
     }
 }

@@ -39,3 +39,20 @@ pub fn xoroshiro_x86_64_asm(seed_lo_ptr: &mut u64, seed_hi_ptr: &mut u64) -> u64
     *seed_hi_ptr = seed_hi;
     n
 }
+
+use crate::random::xoroshiro::XoroshiroVariant;
+use crate::variant;
+
+#[cfg(target_arch = "x86_64")]
+#[variant(group = "xoroshiro")]
+pub struct X86_64Asm;
+
+#[cfg(target_arch = "x86_64")]
+impl XoroshiroVariant for X86_64Asm {
+    fn name() -> &'static str {
+        "x86_64-asm"
+    }
+    fn compute(s0: &mut u64, s1: &mut u64) -> u64 {
+        xoroshiro_x86_64_asm(s0, s1)
+    }
+}

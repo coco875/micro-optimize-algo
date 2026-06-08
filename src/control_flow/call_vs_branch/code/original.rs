@@ -22,21 +22,33 @@ fn square(x: u32) -> u32 {
     x.wrapping_mul(x)
 }
 
-/// Process a value through a chain of function calls:
-/// result = square(add_ten(double(value)))
-///
-/// Each step is a separate function call with CALL/RET overhead.
-#[inline(never)]
-pub fn process_with_calls(value: u32) -> u32 {
-    let step1 = double(value); // CALL double, RET
-    let step2 = add_ten(step1); // CALL add_ten, RET
-    square(step2) // CALL square, RET
+use crate::control_flow::call_vs_branch::CallVsBranchVariant;
+use crate::variant;
+
+#[variant(group = "call_vs_branch")]
+pub struct Original;
+
+impl CallVsBranchVariant for Original {
+    fn name() -> &'static str {
+        "original"
+    }
+    fn compute(val: u32) -> u32 {
+        let step1 = double(val); // CALL double, RET
+        let step2 = add_ten(step1); // CALL add_ten, RET
+        square(step2) // CALL square, RET
+    }
 }
 
-/// Process a value with everything inlined (for comparison reference)
-#[inline(never)]
-pub fn process_inline(value: u32) -> u32 {
-    let step1 = value * 2;
-    let step2 = step1 + 10;
-    step2.wrapping_mul(step2)
+#[variant(group = "call_vs_branch")]
+pub struct RustInline;
+
+impl CallVsBranchVariant for RustInline {
+    fn name() -> &'static str {
+        "rust_inline"
+    }
+    fn compute(val: u32) -> u32 {
+        let step1 = val * 2;
+        let step2 = step1 + 10;
+        step2.wrapping_mul(step2)
+    }
 }

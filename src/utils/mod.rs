@@ -3,6 +3,7 @@
 pub mod bench;
 pub mod cpu_affinity;
 pub mod runner;
+pub mod scenario;
 pub mod timer;
 pub mod tui;
 
@@ -14,7 +15,8 @@ pub use bench::{
     calculate_std_dev, compute_stats, shuffle, shuffle_with_rng, time_seed, SeededRng,
 };
 pub use cpu_affinity::CpuPinGuard;
-pub use timer::{calculate_median, measure_variants, TimingConfig, Variant, VariantResult};
+pub use scenario::{CpuTimer, Scenario, ScenarioDefinition};
+pub use timer::{calculate_median, TimingConfig};
 
 #[cfg(any(not(feature = "cpu_cycles"), feature = "use_time"))]
 pub use bench::{elapsed, now};

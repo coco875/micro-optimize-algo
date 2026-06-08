@@ -1,6 +1,7 @@
 //! Implementations of the gradient dot product algorithm.
 
-use crate::utils::VariantInfo;
+use crate::math::grad_dot::GradDotVariant;
+use crate::variant;
 use std::hint::black_box;
 use std::simd::prelude::*;
 
@@ -184,26 +185,38 @@ pub fn grad_dot_simd_transpose_x4(hashes: &[usize], x: &[f64], y: &[f64], z: &[f
     total
 }
 
-/// Type alias for gradient dot product function signature
-pub type GradDotFn = fn(&[usize], &[f64], &[f64], &[f64]) -> f64;
+#[variant(group = "grad_dot")]
+pub struct Original;
 
-/// Get all available variants
-pub fn available_variants() -> Vec<VariantInfo<GradDotFn>> {
-    vec![
-        VariantInfo {
-            name: "original",
-            description: "Scalar gradient dot product reference implementation",
-            function: grad_dot_original,
-        },
-        VariantInfo {
-            name: "simd_portable_x4",
-            description: "Vectorized implementation using portable_simd f64x4 (loop gather)",
-            function: grad_dot_simd_portable_x4,
-        },
-        VariantInfo {
-            name: "simd_transpose_x4",
-            description: "Vectorized implementation using portable_simd f64x4 (transpose gather)",
-            function: grad_dot_simd_transpose_x4,
-        },
-    ]
+impl GradDotVariant for Original {
+    fn name() -> &'static str {
+        "original"
+    }
+    fn compute(hashes: &[usize], x: &[f64], y: &[f64], z: &[f64]) -> f64 {
+        grad_dot_original(hashes, x, y, z)
+    }
+}
+
+#[variant(group = "grad_dot")]
+pub struct SimdPortableX4;
+
+impl GradDotVariant for SimdPortableX4 {
+    fn name() -> &'static str {
+        "simd_portable_x4"
+    }
+    fn compute(hashes: &[usize], x: &[f64], y: &[f64], z: &[f64]) -> f64 {
+        grad_dot_simd_portable_x4(hashes, x, y, z)
+    }
+}
+
+#[variant(group = "grad_dot")]
+pub struct SimdTransposeX4;
+
+impl GradDotVariant for SimdTransposeX4 {
+    fn name() -> &'static str {
+        "simd_transpose_x4"
+    }
+    fn compute(hashes: &[usize], x: &[f64], y: &[f64], z: &[f64]) -> f64 {
+        grad_dot_simd_transpose_x4(hashes, x, y, z)
+    }
 }

@@ -2,92 +2,69 @@ pub mod code;
 #[cfg(test)]
 pub mod test;
 
-use crate::registry::{AlgorithmRunner, VariantClosure};
+pub use code::*;
 
-pub struct XoroshiroRunner;
+use crate::scenario;
+use crate::utils::{scenario::OtherMetric, Scenario, ScenarioDefinition};
 
-impl AlgorithmRunner for XoroshiroRunner {
-    fn name(&self) -> &'static str {
-        "xoroshiro128++"
+/// Trait defining a xoroshiro variant statically
+pub trait XoroshiroVariant: Send + 'static {
+    /// Variant name
+    fn name() -> &'static str;
+    /// Computation step function
+    fn compute(s0: &mut u64, s1: &mut u64) -> u64;
+}
+
+/// Scenario implementation for Xoroshiro128++ generic over variant V.
+#[scenario(
+    group = "xoroshiro",
+    name = "xoroshiro128++",
+    tags = "random, generator"
+)]
+pub struct XoroshiroScenario<V> {
+    s0: u64,
+    s1: u64,
+    result: Option<u64>,
+    _marker: std::marker::PhantomData<V>,
+}
+
+impl<V: XoroshiroVariant> Scenario for XoroshiroScenario<V> {
+    fn task(&mut self) {
+        self.result = Some(std::hint::black_box(V::compute(&mut self.s0, &mut self.s1)));
     }
 
-    fn description(&self) -> &'static str {
-        "Xoroshiro128++ pseudo-random number generator"
+    fn other_metric(&self) -> OtherMetric {
+        self.result
+            .map(|r| OtherMetric::Randomness(r.count_ones() as f64 / 64.0))
+            .unwrap_or(OtherMetric::None)
     }
+}
 
-    fn category(&self) -> &'static str {
-        "random"
-    }
+impl<V: XoroshiroVariant> ScenarioDefinition<V> for XoroshiroScenario<V> {
+    type Param = ();
 
-    fn available_variants(&self) -> Vec<&'static str> {
-        code::available_variants().iter().map(|v| v.name).collect()
-    }
-
-    fn get_variant_closures<'a>(&'a self, size: usize) -> Vec<VariantClosure<'a>> {
-        // Only run for the smallest size to avoid redundant measurements
-        // Since we measure a single function call, size is irrelevant
-        if size != 64 {
-            return Vec::new();
+    fn new(_param: (), seed: u64) -> Self {
+        let mut rng = crate::utils::bench::SeededRng::new(seed);
+        let mut s0 = rng.next_u64();
+        let mut s1 = rng.next_u64();
+        // Avoid 0 seed state
+        if s0 == 0 && s1 == 0 {
+            s0 = 0x123456789ABCDEF0;
+            s1 = 0xFEDCBA9876543210;
         }
-
-        code::available_variants()
-            .into_iter()
-            .map(|v| {
-                let func = v.function;
-                // Use mutable captures directly - FnMut allows this
-                let mut s0 = 0x12345678u64;
-                let mut s1 = 0x87654321u64;
-
-                VariantClosure {
-                    name: v.name,
-                    description: v.description,
-                    run: Box::new(move || {
-                        // Timing inside closure eliminates Fn trait overhead
-                        let (elapsed, result) = crate::measure!(func(&mut s0, &mut s1));
-                        (elapsed, Some(result as f64))
-                    }),
-                }
-            })
-            .collect()
+        Self {
+            s0,
+            s1,
+            result: None,
+            _marker: std::marker::PhantomData,
+        }
     }
 
-    fn verify(&self) -> Result<(), String> {
-        let variants = code::available_variants();
+    fn generate_params(_config: &crate::utils::runner::Config) -> Vec<()> {
+        vec![()]
+    }
 
-        let original_variant = variants
-            .iter()
-            .find(|v| v.name == "original")
-            .ok_or("No 'original' variant found for reference")?;
-
-        let seed_lo_ref = 0xdeadbeef;
-        let seed_hi_ref = 0xcafebab;
-
-        let mut expected_sequence = Vec::new();
-        let mut s0 = seed_lo_ref;
-        let mut s1 = seed_hi_ref;
-        for _ in 0..100 {
-            expected_sequence.push((original_variant.function)(&mut s0, &mut s1));
-        }
-
-        for variant in &variants {
-            if variant.name == "original" {
-                continue;
-            }
-
-            let mut s0 = seed_lo_ref;
-            let mut s1 = seed_hi_ref;
-
-            for (i, &expected) in expected_sequence.iter().enumerate() {
-                let result = (variant.function)(&mut s0, &mut s1);
-                if result != expected {
-                    return Err(format!(
-                        "Variant '{}' failed verification at iteration {}. Expected {}, got {}",
-                        variant.name, i, expected, result
-                    ));
-                }
-            }
-        }
-
-        Ok(())
+    fn format_param(_param: &()) -> String {
+        "N/A".to_string()
     }
 }

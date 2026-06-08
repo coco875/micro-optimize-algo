@@ -56,3 +56,20 @@ pub fn dot_product_x86_64_sse2(a: &[f32], b: &[f32]) -> f32 {
 pub fn dot_product_x86_64_sse2(a: &[f32], b: &[f32]) -> f32 {
     a.iter().zip(b.iter()).map(|(x, y)| x * y).sum()
 }
+
+use crate::math::dot_product::DotProductVariant;
+use crate::variant;
+
+#[cfg(target_arch = "x86_64")]
+#[variant(group = "dot_product")]
+pub struct Sse2;
+
+#[cfg(target_arch = "x86_64")]
+impl DotProductVariant for Sse2 {
+    fn name() -> &'static str {
+        "x86_64-sse2"
+    }
+    fn compute(a: &[f32], b: &[f32]) -> f32 {
+        dot_product_x86_64_sse2(a, b)
+    }
+}

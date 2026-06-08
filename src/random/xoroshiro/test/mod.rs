@@ -26,9 +26,10 @@ fn test_xoroshiro_known_value() {
 
 #[test]
 fn test_xoroshiro_determinism() {
-    let variants = code::available_variants();
+    use crate::random::xoroshiro::code::original::Original;
+    use crate::random::xoroshiro::XoroshiroVariant;
 
-    for variant in variants {
+    fn test_det<V: XoroshiroVariant>() {
         let mut s0_a = 0x12345678;
         let mut s1_a = 0x87654321;
 
@@ -37,24 +38,31 @@ fn test_xoroshiro_determinism() {
 
         // Run two identical sequences
         for _ in 0..100 {
-            let res_a = (variant.function)(&mut s0_a, &mut s1_a);
-            let res_b = (variant.function)(&mut s0_b, &mut s1_b);
-            assert_eq!(
-                res_a, res_b,
-                "Variant {} should be deterministic",
-                variant.name
-            );
+            let res_a = V::compute(&mut s0_a, &mut s1_a);
+            let res_b = V::compute(&mut s0_b, &mut s1_b);
+            assert_eq!(res_a, res_b, "Variant should be deterministic");
         }
+    }
+
+    test_det::<Original>();
+
+    #[cfg(target_arch = "x86_64")]
+    {
+        use crate::random::xoroshiro::code::x86_64_asm::X86_64Asm;
+        test_det::<X86_64Asm>();
+    }
+
+    #[cfg(c_implementation_active)]
+    {
+        use crate::random::xoroshiro::code::c_impl::COriginal;
+        test_det::<COriginal>();
     }
 }
 
 #[test]
 fn test_all_variants_match_original() {
-    let variants = code::available_variants();
-    let original = variants
-        .iter()
-        .find(|v| v.name == "original")
-        .expect("original variant not found");
+    use crate::random::xoroshiro::code::original::Original;
+    use crate::random::xoroshiro::XoroshiroVariant;
 
     let seed_lo = 0xdeadbeef;
     let seed_hi = 0xcafebab;
@@ -64,20 +72,28 @@ fn test_all_variants_match_original() {
     let mut s0 = seed_lo;
     let mut s1 = seed_hi;
     for _ in 0..1000 {
-        expected.push((original.function)(&mut s0, &mut s1));
+        expected.push(Original::compute(&mut s0, &mut s1));
     }
 
-    for variant in &variants {
-        if variant.name == "original" {
-            continue;
-        }
-
+    fn test_match<V: XoroshiroVariant>(expected: &[u64], seed_lo: u64, seed_hi: u64) {
         let mut s0 = seed_lo;
         let mut s1 = seed_hi;
 
         for (i, &exp) in expected.iter().enumerate() {
-            let got = (variant.function)(&mut s0, &mut s1);
-            assert_eq!(got, exp, "Variant {} mismatch at index {}", variant.name, i);
+            let got = V::compute(&mut s0, &mut s1);
+            assert_eq!(got, exp, "Mismatch at index {}", i);
         }
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    {
+        use crate::random::xoroshiro::code::x86_64_asm::X86_64Asm;
+        test_match::<X86_64Asm>(&expected, seed_lo, seed_hi);
+    }
+
+    #[cfg(c_implementation_active)]
+    {
+        use crate::random::xoroshiro::code::c_impl::COriginal;
+        test_match::<COriginal>(&expected, seed_lo, seed_hi);
     }
 }

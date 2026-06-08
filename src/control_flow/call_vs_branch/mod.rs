@@ -3,69 +3,71 @@
 pub mod code;
 pub mod test;
 
-use crate::registry::{AlgorithmRunner, VariantClosure};
-use std::sync::Arc;
+pub use code::*;
 
-/// Generate test data
-fn generate_test_data(size: usize, seed: u64) -> Vec<u32> {
-    let mut data = Vec::with_capacity(size);
-    let mut rng = seed;
+use crate::scenario;
+use crate::utils::{scenario::OtherMetric, Scenario, ScenarioDefinition};
 
-    for _ in 0..size {
-        rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1);
-        data.push((rng >> 32) as u32 % 512);
-    }
-    data
+/// Trait defining a call vs branch variant statically
+pub trait CallVsBranchVariant: Send + 'static {
+    /// Variant name
+    fn name() -> &'static str;
+    /// Computation function
+    fn compute(val: u32) -> u32;
 }
 
-pub struct CallVsBranchRunner;
+/// Scenario implementation for Call vs Branch Comparison generic over variant V.
+#[scenario(group = "call_vs_branch", tags = "control_flow")]
+pub struct CallVsBranchScenario<V> {
+    data: Vec<u32>,
+    result: Option<u32>,
+    _marker: std::marker::PhantomData<V>,
+}
 
-impl AlgorithmRunner for CallVsBranchRunner {
-    fn name(&self) -> &'static str {
-        "call_vs_branch"
+impl<V: CallVsBranchVariant> Scenario for CallVsBranchScenario<V> {
+    fn task(&mut self) {
+        let mut last_result = 0u32;
+        for &val in &self.data {
+            last_result = std::hint::black_box(V::compute(std::hint::black_box(val)));
+        }
+        self.result = Some(last_result);
     }
 
-    fn category(&self) -> &'static str {
-        "control_flow"
+    fn other_metric(&self) -> OtherMetric {
+        self.result
+            .map(|r| OtherMetric::Validation(r.to_string()))
+            .unwrap_or(OtherMetric::None)
+    }
+}
+
+impl<V: CallVsBranchVariant> ScenarioDefinition<V> for CallVsBranchScenario<V> {
+    type Param = usize;
+
+    fn new(size: usize, seed: u64) -> Self {
+        let mut rng = crate::utils::bench::SeededRng::new(seed);
+        let data = (0..size).map(|_| rng.next_u32_range(512)).collect();
+        Self {
+            data,
+            result: None,
+            _marker: std::marker::PhantomData,
+        }
     }
 
-    fn description(&self) -> &'static str {
-        "Comparison between function calls (CALL/RET) and inline code"
-    }
-
-    fn available_variants(&self) -> Vec<&'static str> {
-        code::get_variants().iter().map(|v| v.name).collect()
-    }
-
-    fn get_variant_closures<'a>(&'a self, size: usize) -> Vec<VariantClosure<'a>> {
-        let data: Arc<Vec<u32>> = Arc::new(generate_test_data(size, 0x12345678));
-
-        code::get_variants()
-            .into_iter()
-            .map(|v| {
-                let data = Arc::clone(&data);
-                let func = v.function;
-
-                VariantClosure {
-                    name: v.name,
-                    description: v.description,
-                    run: Box::new(move || {
-                        // Timing inside closure - measures entire loop
-                        let (elapsed, _) = crate::measure!({
-                            let mut last_result = 0u32;
-                            for &val in data.iter() {
-                                last_result = std::hint::black_box(func(std::hint::black_box(val)));
-                            }
-                            last_result
-                        });
-                        (elapsed, None) // No precision measurement for control flow
-                    }),
+    fn generate_params(config: &crate::utils::runner::Config) -> Vec<usize> {
+        if let Some(table) = config.get_table("call_vs_branch") {
+            if let Some(sizes_val) = table.get("sizes") {
+                if let Some(arr) = sizes_val.as_array() {
+                    return arr
+                        .iter()
+                        .filter_map(|v| v.as_integer().map(|i| i as usize))
+                        .collect();
                 }
-            })
-            .collect()
+            }
+        }
+        vec![64, 256, 1024, 4096, 16384]
     }
 
-    fn verify(&self) -> Result<(), String> {
-        test::verify_all()
+    fn format_param(param: &usize) -> String {
+        param.to_string()
     }
 }

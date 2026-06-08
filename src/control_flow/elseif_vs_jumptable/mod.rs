@@ -3,71 +3,80 @@
 pub mod code;
 pub mod test;
 
-use crate::registry::{AlgorithmRunner, VariantClosure};
-use std::sync::Arc;
+pub use code::*;
 
-/// Generate test data - random opcodes (0-7) and values
-fn generate_test_data(size: usize, seed: u64) -> Vec<(u8, u32)> {
-    let mut data = Vec::with_capacity(size);
-    let mut rng = seed;
+use crate::scenario;
+use crate::utils::{scenario::OtherMetric, Scenario, ScenarioDefinition};
 
-    for _ in 0..size {
-        rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1);
-        let opcode = ((rng >> 32) % 8) as u8;
-        let value = ((rng >> 40) % 1000) as u32 + 1;
-        data.push((opcode, value));
-    }
-    data
+/// Trait defining an else-if vs jumptable variant statically
+pub trait ElseIfVsJumpTableVariant: Send + 'static {
+    /// Variant name
+    fn name() -> &'static str;
+    /// Computation function
+    fn compute(op: u8, val: u32) -> u32;
 }
 
-pub struct ElseIfVsJumpTableRunner;
+/// Scenario implementation for Else-If Chain vs Jump Table Comparison generic over variant V.
+#[scenario(group = "elseif_vs_jumptable", tags = "control_flow, branch")]
+pub struct ElseIfVsJumpTableScenario<V> {
+    data: Vec<(u8, u32)>,
+    result: Option<u32>,
+    _marker: std::marker::PhantomData<V>,
+}
 
-impl AlgorithmRunner for ElseIfVsJumpTableRunner {
-    fn name(&self) -> &'static str {
-        "elseif_vs_jumptable"
+impl<V: ElseIfVsJumpTableVariant> Scenario for ElseIfVsJumpTableScenario<V> {
+    fn task(&mut self) {
+        let mut last_result = 0u32;
+        for &(op, val) in &self.data {
+            last_result = std::hint::black_box(V::compute(
+                std::hint::black_box(op),
+                std::hint::black_box(val),
+            ));
+        }
+        self.result = Some(last_result);
     }
 
-    fn category(&self) -> &'static str {
-        "control_flow"
+    fn other_metric(&self) -> OtherMetric {
+        self.result
+            .map(|r| OtherMetric::Validation(r.to_string()))
+            .unwrap_or(OtherMetric::None)
     }
+}
 
-    fn description(&self) -> &'static str {
-        "Comparison between else-if chains and jump tables"
-    }
+impl<V: ElseIfVsJumpTableVariant> ScenarioDefinition<V> for ElseIfVsJumpTableScenario<V> {
+    type Param = usize;
 
-    fn available_variants(&self) -> Vec<&'static str> {
-        code::get_variants().iter().map(|v| v.name).collect()
-    }
-
-    fn get_variant_closures<'a>(&'a self, size: usize) -> Vec<VariantClosure<'a>> {
-        let data: Arc<Vec<(u8, u32)>> = Arc::new(generate_test_data(size, 0x87654321));
-
-        code::get_variants()
-            .into_iter()
-            .map(|v| {
-                let data = Arc::clone(&data);
-                let func = v.function;
-
-                VariantClosure {
-                    name: v.name,
-                    description: v.description,
-                    run: Box::new(move || {
-                        // Timing inside closure - measures entire loop
-                        let (elapsed, _) = crate::measure!({
-                            let mut last_result = 0u32;
-                            for &(op, val) in data.iter() {
-                                last_result = std::hint::black_box(func(std::hint::black_box(op), std::hint::black_box(val)));
-                            }
-                            last_result
-                        });
-                        (elapsed, None) // No precision measurement for control flow
-                    }),
-                }
+    fn new(size: usize, seed: u64) -> Self {
+        let mut rng = crate::utils::bench::SeededRng::new(seed);
+        let data = (0..size)
+            .map(|_| {
+                let op = rng.next_u32_range(8) as u8;
+                let val = rng.next_u32_range(1000) + 1;
+                (op, val)
             })
-            .collect()
+            .collect();
+        Self {
+            data,
+            result: None,
+            _marker: std::marker::PhantomData,
+        }
     }
 
-    fn verify(&self) -> Result<(), String> {
-        test::verify_all()
+    fn generate_params(config: &crate::utils::runner::Config) -> Vec<usize> {
+        if let Some(table) = config.get_table("elseif_vs_jumptable") {
+            if let Some(sizes_val) = table.get("sizes") {
+                if let Some(arr) = sizes_val.as_array() {
+                    return arr
+                        .iter()
+                        .filter_map(|v| v.as_integer().map(|i| i as usize))
+                        .collect();
+                }
+            }
+        }
+        vec![64, 256, 1024, 4096, 16384]
+    }
+
+    fn format_param(param: &usize) -> String {
+        param.to_string()
     }
 }

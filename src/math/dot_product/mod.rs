@@ -1,95 +1,74 @@
 //! # Dot Product Algorithm
 //!
-//! The dot product (also known as scalar product) computes the sum of products
-//! of corresponding elements in two vectors:
-//!
-//! `dot(a, b) = Σ(a[i] * b[i])`
+//! The dot product computes the sum of products of corresponding elements in two vectors.
 
 pub mod code;
 pub mod test;
 
 pub use code::*;
 
-use crate::registry::{AlgorithmRunner, VariantClosure};
-use rand::Rng;
-use std::sync::Arc;
+use crate::scenario;
+use crate::utils::{scenario::OtherMetric, Scenario, ScenarioDefinition};
 
-/// Runner for the dot product algorithm
-pub struct DotProductRunner;
+/// Trait defining a dot product variant statically
+pub trait DotProductVariant: Send + 'static {
+    /// Variant name
+    fn name() -> &'static str;
+    /// Computation function
+    fn compute(a: &[f32], b: &[f32]) -> f32;
+}
 
-impl AlgorithmRunner for DotProductRunner {
-    fn name(&self) -> &'static str {
-        "dot_product"
+/// Scenario implementation for the dot product algorithm generic over variant V.
+#[scenario(group = "dot_product", tags = "math, vector, 1d")]
+pub struct DotProductScenario<V> {
+    a: Vec<f32>,
+    b: Vec<f32>,
+    result: Option<f32>,
+    _marker: std::marker::PhantomData<V>,
+}
+
+impl<V: DotProductVariant> Scenario for DotProductScenario<V> {
+    fn task(&mut self) {
+        self.result = Some(std::hint::black_box(V::compute(&self.a, &self.b)));
     }
 
-    fn description(&self) -> &'static str {
-        "Computes the sum of products of corresponding vector elements"
+    fn other_metric(&self) -> OtherMetric {
+        self.result
+            .map(|r| OtherMetric::Precision(r as f64))
+            .unwrap_or(OtherMetric::None)
+    }
+}
+
+impl<V: DotProductVariant> ScenarioDefinition<V> for DotProductScenario<V> {
+    type Param = usize;
+
+    fn new(size: usize, seed: u64) -> Self {
+        let mut rng = crate::utils::bench::SeededRng::new(seed);
+        let a = (0..size).map(|_| rng.next_f32_range()).collect();
+        let b = (0..size).map(|_| rng.next_f32_range()).collect();
+        Self {
+            a,
+            b,
+            result: None,
+            _marker: std::marker::PhantomData,
+        }
     }
 
-    fn category(&self) -> &'static str {
-        "math"
-    }
-
-    fn available_variants(&self) -> Vec<&'static str> {
-        code::available_variants().iter().map(|v| v.name).collect()
-    }
-
-    fn get_variant_closures<'a>(&'a self, size: usize) -> Vec<VariantClosure<'a>> {
-        // Generate test data
-        let mut rng = rand::rng();
-        let a: Arc<Vec<f32>> = Arc::new((0..size).map(|_| rng.random_range(-1.0..1.0)).collect());
-        let b: Arc<Vec<f32>> = Arc::new((0..size).map(|_| rng.random_range(-1.0..1.0)).collect());
-
-        code::available_variants()
-            .into_iter()
-            .map(|v| {
-                let a = Arc::clone(&a);
-                let b = Arc::clone(&b);
-                let func = v.function;
-
-                VariantClosure {
-                    name: v.name,
-                    description: v.description,
-                    run: Box::new(move || {
-                        // Timing inside closure eliminates Fn trait overhead
-                        let (elapsed, result) = crate::measure!(func(&a, &b));
-                        (elapsed, Some(result as f64))
-                    }),
+    fn generate_params(config: &crate::utils::runner::Config) -> Vec<usize> {
+        if let Some(table) = config.get_table("dot_product") {
+            if let Some(sizes_val) = table.get("sizes") {
+                if let Some(arr) = sizes_val.as_array() {
+                    return arr
+                        .iter()
+                        .filter_map(|v| v.as_integer().map(|i| i as usize))
+                        .collect();
                 }
-            })
-            .collect()
-    }
-
-    fn verify(&self) -> Result<(), String> {
-        let mut rng = rand::rng();
-        let size = 1023;
-        let a: Vec<f32> = (0..size).map(|_| rng.random_range(-1.0..1.0)).collect();
-        let b: Vec<f32> = (0..size).map(|_| rng.random_range(-1.0..1.0)).collect();
-
-        let variants = code::available_variants();
-        let original_variant = variants
-            .iter()
-            .find(|v| v.name == "original")
-            .ok_or("No 'original' variant found for reference")?;
-
-        let expected = (original_variant.function)(&a, &b);
-
-        for variant in &variants {
-            if variant.name == "original" {
-                continue;
-            }
-
-            let result = (variant.function)(&a, &b);
-            let diff = (result - expected).abs();
-
-            if diff > 1e-4 {
-                return Err(format!(
-                    "Variant '{}' failed verification. Expected {}, got {}, diff {}",
-                    variant.name, expected, result, diff
-                ));
             }
         }
+        vec![64, 256, 1024, 4096, 16384]
+    }
 
-        Ok(())
+    fn format_param(param: &usize) -> String {
+        param.to_string()
     }
 }
