@@ -1,3 +1,4 @@
+#![cfg(target_arch = "x86_64")]
 //! x86_64 Assembly implementations comparing:
 //! - Else-if chain (Branch): Sequential comparisons with Jcc, O(n) worst case
 //! - Jump table: Indexed dispatch, O(1) constant time  

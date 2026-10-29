@@ -73,7 +73,9 @@ pub fn dot_product_c_x86_64_sse2(_a: &[f32], _b: &[f32]) -> f32 {
     panic!("C implementation not compiled (requires GCC/Clang)")
 }
 
+#[cfg(c_implementation_active)]
 use crate::math::dot_product::DotProductVariant;
+#[cfg(c_implementation_active)]
 use crate::variant;
 
 #[cfg(c_implementation_active)]

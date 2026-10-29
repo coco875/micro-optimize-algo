@@ -13,6 +13,8 @@ use std::fs;
 fn main() {
     let args: Vec<String> = env::args().collect();
 
+    let mut verify = false;
+    let mut seed_override = None;
     let mut config_path: Option<String> = None;
     let mut runs_override: Option<u64> = None;
     let mut csv_path: Option<String> = None;
@@ -24,6 +26,20 @@ fn main() {
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
+            "--verify" => {
+                verify = true;
+            }
+            "--seed" => {
+                i += 1;
+                seed_override = Some(
+                    args.get(i)
+                        .and_then(|s| s.parse::<u64>().ok())
+                        .unwrap_or_else(|| {
+                            eprintln!("Error: --seed requires an unsigned integer");
+                            std::process::exit(1);
+                        }),
+                );
+            }
             "--config" | "-c" => {
                 i += 1;
                 if i < args.len() {
@@ -36,7 +52,7 @@ fn main() {
             "--runs" | "--iter" | "-r" => {
                 i += 1;
                 if i < args.len() {
-                    if let Ok(n) = args[i].parse::<u64>() {
+                    if let Some(n) = args[i].parse::<u64>().ok().filter(|n| *n > 0) {
                         runs_override = Some(n);
                     } else {
                         eprintln!("Error: --runs requires a positive integer");
@@ -91,6 +107,10 @@ fn main() {
             "--help" | "-h" => {
                 println!("Usage: micro-algo [options]");
                 println!("Options:");
+                println!(
+                    "  --verify              Validate dedicated fixtures without benchmarking"
+                );
+                println!("  --seed <number>       Replay inputs and order (validation default: 0)");
                 println!("  -c, --config <file>   Load config from TOML file (default: config.toml if exists)");
                 println!("  -r, --runs <number>   Override number of sample runs");
                 println!("  --csv <file>          Path to save CSV output");
@@ -137,6 +157,10 @@ fn main() {
         Config::default()
     };
 
+    if let Some(seed) = seed_override {
+        config.seed = Some(seed);
+    }
+
     // Apply CLI overrides
     if let Some(r) = runs_override {
         config.sample = Some(r);
@@ -149,6 +173,16 @@ fn main() {
     }
     if let Some(ft) = filter_tag {
         config.filter_tag = Some(ft);
+    }
+
+    if verify {
+        println!("Validation seed: {}", config.seed.unwrap_or(0));
+        let report = micro_optimize_algo::registry::verify(&config);
+        report.print();
+        if !report.passed() {
+            std::process::exit(1);
+        }
+        return;
     }
 
     micro_optimize_algo::utils::runner::run_benchmarks(

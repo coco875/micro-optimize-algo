@@ -1,6 +1,8 @@
 //! FFI bindings for C implementations of elseif_vs_jumptable.
 
+#[cfg(c_implementation_active)]
 use crate::control_flow::elseif_vs_jumptable::ElseIfVsJumpTableVariant;
+#[cfg(c_implementation_active)]
 use crate::variant;
 
 #[cfg(c_implementation_active)]

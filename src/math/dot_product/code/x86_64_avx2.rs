@@ -1,3 +1,4 @@
+#![cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
 //! x86_64 AVX2 SIMD implementation.
 //!
 //! This implementation uses AVX2 intrinsics to process 8 f32 values

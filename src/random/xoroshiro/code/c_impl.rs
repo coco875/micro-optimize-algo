@@ -33,7 +33,9 @@ pub fn xoroshiro_c_wrapper(_s0: &mut u64, _s1: &mut u64) -> u64 {
     panic!("C implementation not compiled (requires GCC/Clang)")
 }
 
+#[cfg(c_implementation_active)]
 use crate::random::xoroshiro::XoroshiroVariant;
+#[cfg(c_implementation_active)]
 use crate::variant;
 
 #[cfg(c_implementation_active)]

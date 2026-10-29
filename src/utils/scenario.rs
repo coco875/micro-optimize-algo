@@ -44,53 +44,57 @@ impl Default for CpuTimer {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum OtherMetric {
-    /// A value used to verify correctness across variants (must match exactly)
-    Validation(String),
-    /// A precision score/measurement (e.g. float value to compare/display)
-    Precision(f64),
-    /// A randomness score (e.g. fraction of set bits, entropy)
-    Randomness(f64),
-    /// No extra metric
-    None,
+/// Only the intended workload executes inside the timer.
+pub trait Scenario: Send {
+    fn task(&mut self);
 }
 
-impl std::fmt::Display for OtherMetric {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            OtherMetric::Validation(val) => write!(f, "Validation: {}", val),
-            OtherMetric::Precision(p) => write!(f, "Precision: {:.6e}", p),
-            OtherMetric::Randomness(r) => write!(f, "Randomness: {:.4}", r),
-            OtherMetric::None => write!(f, "None"),
+/// A workload definition, statically specialized for an implementation.
+/// Fixture, Param and Output must be identical for every implementation of a scenario.
+pub trait ScenarioDefinition<V>: Scenario {
+    type Param: Clone + Send + Sync + 'static;
+    type Fixture;
+    type Output;
+    fn prepare(param: &Self::Param, rng: &mut crate::utils::randomness::InputRng) -> Self::Fixture;
+    fn new(fixture: &Self::Fixture) -> Self;
+    fn generate_params(config: &crate::utils::runner::Config) -> Vec<Self::Param>;
+    fn format_param(param: &Self::Param) -> String;
+    fn validation_cases(config: &crate::utils::runner::Config) -> Vec<ValidationCase<Self::Param>>;
+    /// Run once, retaining observations for all selected checks. Never called by benchmarking.
+    fn validate(fixture: &Self::Fixture) -> Self::Output;
+    fn checks(
+        fixture: &Self::Fixture,
+    ) -> Vec<Box<dyn crate::utils::validation::Check<Self::Output>>>;
+}
+
+pub struct ValidationCase<P> {
+    pub id: String,
+    pub param: P,
+}
+
+impl<P> ValidationCase<P> {
+    pub fn new(id: impl Into<String>, param: P) -> Self {
+        Self {
+            id: id.into(),
+            param,
         }
     }
 }
 
-/// A scenario represents an atomic task to be measured.
-pub trait Scenario: Send {
-    /// The actual task to measure.
-    fn task(&mut self);
-
-    /// Optional other metric (validation, precision, randomness, or none).
-    fn other_metric(&self) -> OtherMetric;
-}
-
-/// Trait implemented by scenario definitions.
-pub trait ScenarioDefinition<V>: Scenario {
-    type Param: Clone + Send + Sync + 'static;
-    fn new(param: Self::Param, seed: u64) -> Self;
-    fn generate_params(config: &crate::utils::runner::Config) -> Vec<Self::Param>;
-    fn format_param(param: &Self::Param) -> String;
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_cpu_timer() {
-        let timer = CpuTimer::new();
-        let _ = timer.elapsed_cycles();
-    }
+pub fn size_params(config: &crate::utils::runner::Config, family: &str) -> Vec<usize> {
+    config
+        .get_table(family)
+        .and_then(|table| table.get("sizes"))
+        .and_then(toml::Value::as_array)
+        .map(|sizes| {
+            sizes
+                .iter()
+                .map(|size| {
+                    size.as_integer()
+                        .and_then(|n| usize::try_from(n).ok())
+                        .expect("sizes must contain non-negative integers")
+                })
+                .collect()
+        })
+        .unwrap_or_else(|| vec![64, 256, 1024, 4096, 16384])
 }

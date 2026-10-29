@@ -6,9 +6,8 @@ use std::io::Write;
 use std::time::Duration;
 
 use crate::registry::{get_run_metadata, init_session, run_scenario};
-use crate::utils::scenario::OtherMetric;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RunId(pub u128);
 
 impl RunId {
@@ -33,6 +32,7 @@ impl RunId {
 pub struct RunMetadata {
     pub group: &'static str,
     pub scenario: &'static str,
+    pub scenario_id: &'static str,
     pub variant: &'static str,
     pub context: String,
     pub seed: u64,
@@ -42,6 +42,7 @@ pub struct RunMetadata {
 #[derive(Deserialize, Debug, Clone, Default)]
 pub struct Config {
     pub sample: Option<u64>,
+    pub seed: Option<u64>,
     pub filter_scenario: Option<Vec<String>>,
     pub filter_variant: Option<Vec<String>>,
     pub filter_tag: Option<Vec<String>>,
@@ -50,6 +51,21 @@ pub struct Config {
 }
 
 impl Config {
+    pub fn matches_variant(&self, id: &str) -> bool {
+        self.filter_variant
+            .as_ref()
+            .is_none_or(|filters| filters.iter().any(|f| id.contains(f)))
+    }
+    pub fn matches_scenario(&self, group: &str, id: &str, name: &str, tags: &[&str]) -> bool {
+        self.filter_scenario.as_ref().is_none_or(|filters| {
+            filters
+                .iter()
+                .any(|f| group.contains(f) || id.contains(f) || name.contains(f))
+        }) && self
+            .filter_tag
+            .as_ref()
+            .is_none_or(|filters| filters.iter().any(|f| tags.contains(&f.as_str())))
+    }
     pub fn get_table(&self, key: &str) -> Option<&toml::Table> {
         self.custom.as_ref()?.get(key)?.as_table()
     }
@@ -60,8 +76,9 @@ pub struct RawTimingData {
     pub scenario: String,
     pub variant: String,
     pub context: String,
-    pub avg_nanos: u64,
-    pub other_measurement: String,
+    pub avg_measurement: u64,
+    pub seed: u64,
+    pub unit: &'static str,
 }
 
 struct VariantStats {
@@ -97,6 +114,10 @@ pub fn run_benchmarks(config: Config, csv_path: Option<&str>, filter_outliers: b
         return;
     }
 
+    println!(
+        "  Seed: {} (replay with --seed {})",
+        session.root_seed, session.root_seed
+    );
     let total = session.run_ids.len();
     println!("  Running {} tasks (globally randomized)...", total);
 
@@ -106,7 +127,6 @@ pub fn run_benchmarks(config: Config, csv_path: Option<&str>, filter_outliers: b
     struct RunResult {
         run_id: RunId,
         elapsed: u64,
-        other: OtherMetric,
     }
 
     let mut results = Vec::with_capacity(total);
@@ -126,26 +146,21 @@ pub fn run_benchmarks(config: Config, csv_path: Option<&str>, filter_outliers: b
             );
         }
 
-        let (elapsed, other) = run_scenario(&session, run_id);
-        results.push(RunResult {
-            run_id,
-            elapsed,
-            other,
-        });
+        let elapsed = run_scenario(&session, run_id);
+        results.push(RunResult { run_id, elapsed });
     }
 
     println!("\n  Completed! Analyzing results...");
 
-    // Group results by (group_name, scenario_name, context)
-    // We map: (group, scenario, context) -> variant_name -> Vec<(elapsed, other, seed)>
-    type GroupKey = (String, String, String);
-    let mut grouped: HashMap<GroupKey, HashMap<String, Vec<(u64, OtherMetric, u64)>>> =
-        HashMap::new();
+    // Group timing samples; validation is an independent execution path.
+    type GroupKey = (String, String, String, String);
+    let mut grouped: HashMap<GroupKey, HashMap<String, Vec<u64>>> = HashMap::new();
 
     for r in &results {
         let meta = get_run_metadata(&session, r.run_id);
         let key = (
             meta.group.to_string(),
+            meta.scenario_id.to_string(),
             meta.scenario.to_string(),
             meta.context.clone(),
         );
@@ -154,7 +169,7 @@ pub fn run_benchmarks(config: Config, csv_path: Option<&str>, filter_outliers: b
             .or_default()
             .entry(meta.variant.to_string())
             .or_default()
-            .push((r.elapsed, r.other.clone(), meta.seed));
+            .push(r.elapsed);
     }
 
     let mut csv_data: Vec<RawTimingData> = Vec::new();
@@ -167,11 +182,11 @@ pub fn run_benchmarks(config: Config, csv_path: Option<&str>, filter_outliers: b
         } else if a.1 != b.1 {
             a.1.cmp(&b.1)
         } else {
-            let a_num = a.2.parse::<usize>().ok();
-            let b_num = b.2.parse::<usize>().ok();
+            let a_num = a.3.parse::<usize>().ok();
+            let b_num = b.3.parse::<usize>().ok();
             match (a_num, b_num) {
                 (Some(an), Some(bn)) => an.cmp(&bn),
-                _ => a.2.cmp(&b.2),
+                _ => a.3.cmp(&b.3),
             }
         }
     });
@@ -179,11 +194,11 @@ pub fn run_benchmarks(config: Config, csv_path: Option<&str>, filter_outliers: b
     let mut current_group_scenario = None;
 
     for key in group_keys {
-        let (group, scenario, context) = key.clone();
+        let (group, scenario_id, scenario, context) = key.clone();
 
-        if current_group_scenario != Some((group.clone(), scenario.clone())) {
-            current_group_scenario = Some((group.clone(), scenario.clone()));
-            let title = format!("Algorithm: {}::{}", group, scenario);
+        if current_group_scenario != Some((group.clone(), scenario_id.clone())) {
+            current_group_scenario = Some((group.clone(), scenario_id.clone()));
+            let title = format!("Algorithm: {}::{} [{}]", group, scenario, scenario_id);
             let border = "─".repeat(title.len() + 4);
             println!("\n┌{}┐", border);
             println!("│  {}  │", title);
@@ -195,11 +210,10 @@ pub fn run_benchmarks(config: Config, csv_path: Option<&str>, filter_outliers: b
         unique_variants.sort_by_key(|v| variant_sort_key(v));
 
         let mut variant_stats = Vec::new();
-        let mut last_other_measurement = OtherMetric::None;
 
         for var_name in &unique_variants {
             let runs_data = &variants_map[var_name];
-            let mut times: Vec<_> = runs_data.iter().map(|(t, _, _)| *t).collect();
+            let mut times: Vec<_> = runs_data.clone();
             times.sort();
 
             let trimmed = if filter_outliers && times.len() > 10 {
@@ -242,7 +256,7 @@ pub fn run_benchmarks(config: Config, csv_path: Option<&str>, filter_outliers: b
                         .find(|r| {
                             let m = get_run_metadata(&session, r.run_id);
                             m.group == group
-                                && m.scenario == scenario
+                                && m.scenario_id == scenario_id
                                 && m.context == context
                                 && m.variant == var_name
                         })
@@ -258,73 +272,24 @@ pub fn run_benchmarks(config: Config, csv_path: Option<&str>, filter_outliers: b
                 max_time: Duration::from_nanos(max_val),
                 cv,
             });
-
-            if let Some((_, other, _)) = runs_data.first() {
-                last_other_measurement = other.clone();
-            }
         }
-
-        // Correctness verification
-        let mut all_variants_match = true;
-        let mut mismatch_info = None;
-        let mut verified_sample = None;
-
-        // Group runs by seed to compare variants
-        let mut runs_by_seed: HashMap<u64, Vec<(&str, OtherMetric)>> = HashMap::new();
-        for var_name in &unique_variants {
-            for (_, other, seed) in &variants_map[var_name] {
-                runs_by_seed
-                    .entry(*seed)
-                    .or_default()
-                    .push((var_name.as_str(), other.clone()));
-            }
-        }
-
-        for (seed, var_vals) in &runs_by_seed {
-            if !var_vals.is_empty() {
-                let first_val = &var_vals[0].1;
-                if verified_sample.is_none() {
-                    verified_sample = Some(first_val.clone());
-                }
-                for val in var_vals {
-                    if val.1 != *first_val {
-                        all_variants_match = false;
-                        mismatch_info = Some((
-                            *seed,
-                            var_vals[0].0.to_string(),
-                            format!("{}", first_val),
-                            val.0.to_string(),
-                            format!("{}", val.1),
-                        ));
-                        break;
-                    }
-                }
-            }
-            if !all_variants_match {
-                break;
-            }
-        }
-
-        // Print results table
         print_results_table(
             &variant_stats,
             &context,
             config.sample.unwrap_or(10) as usize,
             filter_outliers,
-            all_variants_match,
-            mismatch_info,
-            verified_sample.as_ref(),
         );
 
         // Save CSV data
         for stats in &variant_stats {
             csv_data.push(RawTimingData {
                 group: group.clone(),
-                scenario: scenario.clone(),
+                scenario: scenario_id.clone(),
                 variant: stats.name.to_string(),
                 context: context.clone(),
-                avg_nanos: stats.avg_nanos_f64 as u64,
-                other_measurement: format!("{}", last_other_measurement),
+                avg_measurement: stats.avg_nanos_f64 as u64,
+                seed: session.root_seed,
+                unit: crate::utils::bench::unit_name(),
             });
         }
     }
@@ -342,32 +307,33 @@ fn export_csv(path: &str, data: &[RawTimingData]) -> std::io::Result<()> {
     let mut file = std::fs::File::create(path)?;
     writeln!(
         file,
-        "group,scenario,variant,context,avg_time_ns,other_measurement"
+        "group,scenario,variant,context,avg_measurement,seed,unit"
     )?;
     for entry in data {
         writeln!(
             file,
-            "{},{},{},{},{},{}",
-            entry.group,
-            entry.scenario,
-            entry.variant,
-            entry.context,
-            entry.avg_nanos,
-            entry.other_measurement
+            "{},{},{},{},{},{},{}",
+            csv_field(&entry.group),
+            csv_field(&entry.scenario),
+            csv_field(&entry.variant),
+            csv_field(&entry.context),
+            entry.avg_measurement,
+            entry.seed,
+            entry.unit
         )?;
     }
     Ok(())
 }
 
-fn print_results_table(
-    results: &[VariantStats],
-    context: &str,
-    runs: usize,
-    filtered: bool,
-    verified: bool,
-    mismatch: Option<(u64, String, String, String, String)>,
-    verified_sample: Option<&OtherMetric>,
-) {
+fn csv_field(value: &str) -> String {
+    if value.contains([',', '"', '\n', '\r']) {
+        format!("\"{}\"", value.replace('"', "\"\""))
+    } else {
+        value.to_owned()
+    }
+}
+
+fn print_results_table(results: &[VariantStats], context: &str, runs: usize, filtered: bool) {
     if results.is_empty() {
         return;
     }
@@ -415,23 +381,5 @@ fn print_results_table(
     }
     println!("  {}", "─".repeat(table_width));
 
-    if verified {
-        match verified_sample {
-            Some(OtherMetric::None) | None => {
-                println!("  Other Measurements: N/A");
-            }
-            Some(metric) => {
-                println!(
-                    "  Other Measurements: Verified (All variants match: {})",
-                    metric
-                );
-            }
-        }
-    } else if let Some((seed, var1, val1, var2, val2)) = mismatch {
-        println!("  ⚠️  WARNING: Other measurements mismatch!");
-        println!("     Seed: 0x{:X}", seed);
-        println!("     - {:<15}: {}", var1, val1);
-        println!("     - {:<15}: {}", var2, val2);
-    }
     println!();
 }

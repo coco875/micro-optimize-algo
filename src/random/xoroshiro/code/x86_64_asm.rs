@@ -1,3 +1,4 @@
+#![cfg(target_arch = "x86_64")]
 use std::arch::asm;
 
 pub fn xoroshiro_x86_64_asm(seed_lo_ptr: &mut u64, seed_hi_ptr: &mut u64) -> u64 {

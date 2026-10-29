@@ -1,3 +1,4 @@
+#![cfg(target_arch = "x86_64")]
 //! x86_64 SSE2 SIMD implementation.
 //!
 //! SSE2 is available on all x86_64 CPUs, processing 4 f32 values per iteration.

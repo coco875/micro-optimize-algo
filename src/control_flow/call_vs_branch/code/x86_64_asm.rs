@@ -1,3 +1,4 @@
+#![cfg(target_arch = "x86_64")]
 //! x86_64 Assembly implementations showing the difference between:
 //! - Function calls (CALL/RET) with stack operations
 //! - Inline code without call overhead

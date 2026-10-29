@@ -9,7 +9,11 @@ mod tests {
     use crate::control_flow::vtable_iteration::VTableIterationVariant;
 
     fn verify_pool<V: VTableIterationVariant>(name: &str) {
-        let mut pool = V::create(100, 0x12345678);
+        let mut pool = V::create(
+            &(0..100)
+                .map(|i| ((i % 7) as u8, i as u8))
+                .collect::<Vec<_>>(),
+        );
         let result = pool.iterate();
         assert!(result > 0, "{} returned 0", name);
     }

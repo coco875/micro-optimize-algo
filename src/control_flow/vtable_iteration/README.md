@@ -55,11 +55,13 @@ Compares different iteration strategies over a heterogeneous pool of polymorphic
 ```
 vtable_iteration/
 ├── README.md           # This file
-├── mod.rs              # AlgorithmRunner implementation
+├── mod.rs              # System contract and discovered modules
 ├── code/
 │   ├── mod.rs          # Module exports
 │   ├── objects.rs      # Object definitions with manual vtables
 │   └── variants.rs     # Pool implementations (ObjectPool trait)
+├── scenarios/
+│   └── mixed.rs        # Shared object fixtures, timing, and typed validation
 └── test/
     └── mod.rs          # Verification tests
 ```

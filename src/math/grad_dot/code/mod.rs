@@ -220,3 +220,5 @@ impl GradDotVariant for SimdTransposeX4 {
         grad_dot_simd_transpose_x4(hashes, x, y, z)
     }
 }
+
+crate::implementation_modules!("math/grad_dot");

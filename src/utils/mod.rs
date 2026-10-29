@@ -2,10 +2,12 @@
 
 pub mod bench;
 pub mod cpu_affinity;
+pub mod randomness;
 pub mod runner;
 pub mod scenario;
 pub mod timer;
 pub mod tui;
+pub mod validation;
 
 #[cfg(all(feature = "cpu_cycles", not(feature = "use_time")))]
 pub mod cycles;
