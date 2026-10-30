@@ -10,6 +10,7 @@ The framework automatically discovers implementation and scenario files, generat
 |---|---|---|
 | `dot_product` | math | Random vectors and cancellation-heavy inputs |
 | `grad_dot` | math | Gradient-vector dot products |
+| `log2` | math | f32 approximations, libm, micromath, and fastapprox versus `f32::log2`; timing and accuracy reports |
 | `xoroshiro` | random | Generator steps; dedicated sequence/state and entropy validation |
 | `call_vs_branch` | control_flow | Function calls, branches, and inline computation |
 | `elseif_vs_jumptable` | control_flow | Else-if chains, jump tables, and branchless dispatch |
@@ -55,7 +56,7 @@ RUSTFLAGS="-C target-cpu=native" cargo run --release
 | `--scenario LIST` | Comma-separated substrings of family, scenario ID, or display name |
 | `--variant LIST` | Comma-separated registered implementation ID substrings, e.g. `Original,ScalarOpt` |
 | `--tag LIST` | Comma-separated exact tag matches |
-| `--csv FILE` | Export timing statistics and a companion `.samples.csv` containing every measured sample |
+| `--csv FILE` | Export timing statistics plus `.samples.csv`; with `--verify`, export validation checks and accuracy metrics |
 | `--filter`, `-f` | Trim timing extremes when there are more than 10 samples |
 | `--help`, `-h` | Show usage |
 | Positional names | Additional scenario filters |
@@ -76,6 +77,14 @@ sizes = [128, 512, 2048]
 Reports show mean, median, p95, sample count, variability, and approximate 95% confidence intervals for the mean. `--csv results.csv` writes summary statistics to `results.csv` and every measured sample to `results.samples.csv`, including execution order, fixture seeds, and filtering decisions. The summary preserves its initial columns `group,scenario,variant,context,avg_measurement,seed,unit` and appends statistical fields; means retain fractional precision. See [BENCHMARKING.md](BENCHMARKING.md) for column definitions and statistical assumptions.
 
 The `scenario` column contains the stable scenario ID. Measurements use x86_64 TSC cycles, aarch64 virtual-counter ticks, or wall-clock nanoseconds according to the target and selected features. Timing reports do not claim correctness; run validation separately.
+
+To export differences from the standard library for `log2`:
+
+```bash
+cargo run --release -- --verify --scenario log2 --seed 42 --csv log2-accuracy.csv
+```
+
+The validation CSV includes separate numeric columns `metric_max_abs`, `metric_rmse`, `metric_mismatches`, and `metric_samples`, alongside the implementation, case, fixture seed, and check result.
 
 ## Extend
 

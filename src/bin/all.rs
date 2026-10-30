@@ -139,7 +139,7 @@ fn main() {
                     "  --pin <strategy>      CPU affinity: global or per-call (default: per-call)"
                 );
                 println!(
-                    "  --csv <file>          Export statistics and a companion .samples.csv file"
+                    "  --csv <file>          Export timing statistics + .samples.csv, or validation checks with --verify"
                 );
                 println!("  -f, --filter          Filter timing outliers");
                 println!("  --scenario <list>     Comma-separated list of scenarios to run");
@@ -212,6 +212,16 @@ fn main() {
         println!("Validation seed: {}", config.seed.unwrap_or(0));
         let report = micro_optimize_algo::registry::verify(&config);
         report.print();
+        if let Some(path) = csv_path {
+            if let Err(error) = report.export_csv(&path) {
+                eprintln!(
+                    "Error: Failed to export validation CSV '{}': {}",
+                    path, error
+                );
+                std::process::exit(1);
+            }
+            println!("Validation checks exported to: {}", path);
+        }
         if !report.passed() {
             std::process::exit(1);
         }

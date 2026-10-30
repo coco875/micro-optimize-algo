@@ -8,6 +8,7 @@ use crate::registry::{
     get_run_metadata, init_session, run_scenario, warmup_scenario, BenchmarkSession,
 };
 use crate::utils::cpu_affinity::CpuPinGuard;
+use crate::utils::csv::csv_field;
 use crate::utils::randomness::{derive_seed, InputRng};
 use crate::utils::statistics::TimingStatistics;
 use crate::utils::timer::{PinStrategy, DEFAULT_WARMUP_ITERATIONS};
@@ -426,14 +427,6 @@ fn export_samples(
         )?;
     }
     file.flush()
-}
-
-fn csv_field(value: &str) -> String {
-    if value.contains([',', '"', '\n', '\r']) {
-        format!("\"{}\"", value.replace('"', "\"\""))
-    } else {
-        value.to_owned()
-    }
 }
 
 fn print_results_table(results: &[VariantStats], context: &str, runs: usize, filtered: bool) {

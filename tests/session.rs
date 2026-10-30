@@ -149,6 +149,74 @@ fn cli_separates_validation_and_timing_and_rejects_empty_selection() {
 }
 
 #[test]
+fn cli_exports_validation_metrics_and_reports_export_errors() {
+    let dir =
+        std::env::temp_dir().join(format!("micro-algo-validation-csv-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let run = |args: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_micro-algo"))
+            .current_dir(&dir)
+            .args([
+                "--verify",
+                "--scenario",
+                "log2",
+                "--seed",
+                "42",
+                "--variant",
+                "Original,Std",
+            ])
+            .args(args)
+            .output()
+            .unwrap()
+    };
+    let output = run(&["--csv", "accuracy.csv"]);
+    assert!(output.status.success(), "{output:?}");
+    let csv = std::fs::read_to_string(dir.join("accuracy.csv")).unwrap();
+    let mut lines = csv.lines();
+    assert_eq!(lines.next().unwrap(), "group,scenario,variant,case,fixture_seed,check,passed,measured,threshold,reason,metric_max_abs,metric_mismatches,metric_rmse,metric_samples");
+    let rows: Vec<_> = lines.collect();
+    assert_eq!(rows.len(), 4);
+    for row in rows {
+        let metrics: Vec<_> = row.rsplitn(5, ',').collect();
+        assert_eq!(metrics[0], "65536");
+        let rmse = metrics[1].parse::<f64>().unwrap();
+        let max_abs = metrics[3].parse::<f64>().unwrap();
+        if row.starts_with("log2,Log2,Std,") {
+            assert_eq!(metrics[2], "0");
+            assert_eq!(rmse, 0.0);
+            assert_eq!(max_abs, 0.0);
+        } else {
+            assert!(row.starts_with("log2,Log2,Original,"));
+            assert_eq!(metrics[2], "65536");
+            assert!(rmse > 0.6);
+            assert!(max_abs > 0.99);
+        }
+    }
+    assert!(!dir.join("accuracy.samples.csv").exists());
+
+    let filtered = run(&["--csv", "filtered.csv", "--variant", "Original"]);
+    assert!(filtered.status.success(), "{filtered:?}");
+    let csv = std::fs::read_to_string(dir.join("filtered.csv")).unwrap();
+    assert_eq!(csv.lines().count(), 3);
+    assert!(csv
+        .lines()
+        .skip(1)
+        .all(|row| row.starts_with("log2,Log2,Original,")));
+
+    let error = run(&["--csv", "missing-directory/accuracy.csv"]);
+    assert!(!error.status.success());
+    assert!(String::from_utf8(error.stderr)
+        .unwrap()
+        .contains("Failed to export validation CSV"));
+
+    let empty = run(&["--csv", "empty.csv", "--variant", "missing-variant"]);
+    assert!(!empty.status.success());
+    let csv = std::fs::read_to_string(dir.join("empty.csv")).unwrap();
+    assert_eq!(csv.lines().count(), 1);
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
 fn cli_honors_warmup_and_pinning_overrides_without_exporting_warmups() {
     let dir = std::env::temp_dir().join(format!("micro-algo-warmup-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();

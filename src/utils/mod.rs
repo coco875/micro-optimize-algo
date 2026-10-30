@@ -2,6 +2,7 @@
 
 pub mod bench;
 pub mod cpu_affinity;
+mod csv;
 pub mod randomness;
 pub mod runner;
 pub mod scenario;

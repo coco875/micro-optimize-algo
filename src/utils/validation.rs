@@ -1,5 +1,8 @@
 //! Typed checks run only in validation mode. Policies are ordinary Rust types.
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Debug, Write};
+
+use super::csv::csv_field;
 
 fn preview(value: &impl Debug) -> String {
     struct Limited(String);
@@ -31,6 +34,8 @@ pub struct CheckResult {
     pub measured: String,
     pub threshold: String,
     pub reason: String,
+    /// Structured values exported as separate `metric_<name>` CSV columns.
+    pub metrics: BTreeMap<&'static str, String>,
 }
 
 impl CheckResult {
@@ -45,7 +50,13 @@ impl CheckResult {
             measured: measured.into(),
             threshold: threshold.into(),
             reason: reason.into(),
+            metrics: BTreeMap::new(),
         }
+    }
+
+    pub fn with_metric(mut self, name: &'static str, value: impl ToString) -> Self {
+        self.metrics.insert(name, value.to_string());
+        self
     }
 }
 
@@ -219,6 +230,56 @@ pub struct ValidationReport {
     pub records: Vec<ValidationRecord>,
 }
 impl ValidationReport {
+    /// Export all checks, including failures, with optional structured metrics.
+    pub fn export_csv(&self, path: impl AsRef<std::path::Path>) -> std::io::Result<()> {
+        let mut file = std::io::BufWriter::new(std::fs::File::create(path)?);
+        self.write_csv(&mut file)?;
+        std::io::Write::flush(&mut file)
+    }
+
+    fn write_csv(&self, mut writer: impl std::io::Write) -> std::io::Result<()> {
+        let metric_names: BTreeSet<_> = self
+            .records
+            .iter()
+            .flat_map(|record| record.result.metrics.keys().copied())
+            .collect();
+        write!(
+            writer,
+            "group,scenario,variant,case,fixture_seed,check,passed,measured,threshold,reason"
+        )?;
+        for name in &metric_names {
+            write!(writer, ",{}", csv_field(&format!("metric_{name}")))?;
+        }
+        writeln!(writer)?;
+        for record in &self.records {
+            write!(
+                writer,
+                "{},{},{},{},{},{},{},{},{},{}",
+                csv_field(record.group),
+                csv_field(record.scenario),
+                csv_field(record.variant),
+                csv_field(&record.case),
+                record.seed,
+                csv_field(&record.check),
+                record.result.passed,
+                csv_field(&record.result.measured),
+                csv_field(&record.result.threshold),
+                csv_field(&record.result.reason),
+            )?;
+            for name in &metric_names {
+                let value = record
+                    .result
+                    .metrics
+                    .get(name)
+                    .map(String::as_str)
+                    .unwrap_or("");
+                write!(writer, ",{}", csv_field(value))?;
+            }
+            writeln!(writer)?;
+        }
+        Ok(())
+    }
+
     pub fn passed(&self) -> bool {
         !self.records.is_empty() && self.records.iter().all(|r| r.result.passed)
     }
@@ -286,6 +347,38 @@ pub fn record_checks<T>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn csv_preserves_failed_checks_escapes_text_and_aligns_optional_metrics() {
+        let record = |result| ValidationRecord {
+            group: "math",
+            scenario: "Log2",
+            variant: "Original",
+            case: "positive-normal".into(),
+            seed: 42,
+            check: "error".into(),
+            result,
+        };
+        let report = ValidationReport {
+            records: vec![
+                record(
+                    CheckResult::new(false, "a,\"b\"\nc", "limit", "reason")
+                        .with_metric("rmse", 1.25),
+                ),
+                record(CheckResult::new(true, "ok", "limit", "reason").with_metric("max_abs", 2)),
+            ],
+        };
+        let mut output = Vec::new();
+        report.write_csv(&mut output).unwrap();
+        assert_eq!(String::from_utf8(output).unwrap(), concat!(
+            "group,scenario,variant,case,fixture_seed,check,passed,measured,threshold,reason,metric_max_abs,metric_rmse\n",
+            "math,Log2,Original,positive-normal,42,error,false,\"a,\"\"b\"\"\nc\",limit,reason,,1.25\n",
+            "math,Log2,Original,positive-normal,42,error,true,ok,limit,reason,2,\n",
+        ));
+        let mut too_small = [0u8; 1];
+        assert!(report.write_csv(&mut too_small[..]).is_err());
+    }
+
     #[test]
     fn tolerance_boundaries_and_nonfinite_values() {
         let check = NumericTolerance {

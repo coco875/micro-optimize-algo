@@ -53,9 +53,27 @@ Mean confidence intervals use `mean +/- t * stddev / sqrt(n)` with conservative 
 
 `--filter` trims each end by `ceil(samples * 0.005)` for groups larger than 10 samples. Descriptive statistics and intervals then describe the retained samples; they do not estimate the unfiltered workload's mean without selection bias. Raw export preserves all observations, including trimmed ones. Validation is a separate path and is never filtered.
 
-`--csv results.csv` writes two files:
+In benchmark mode, `--csv results.csv` writes two files:
 
 - `results.csv`: one row per scenario/implementation/parameter, with columns `group,scenario,variant,context,avg_measurement,seed,unit,samples,total_samples,median_measurement,p95_measurement,min_measurement,max_measurement,stddev_measurement,cv,ci95_low,ci95_high`. `samples` is the retained count, `total_samples` is the count before trimming, and `cv` is a ratio (the console shows percent). All measurement fields and interval bounds use the stated unit. Fractional means and statistics are preserved.
 - `results.samples.csv`: one row per measured execution, in execution order, with columns `group,scenario,variant,context,measurement,seed,fixture_seed,unit,execution_index,included`. `execution_index` starts at zero; `included` records whether filtering retained the sample. Warmup executions are excluded. Replacing the summary path's extension with `.samples.csv` determines the companion path.
 
 The `scenario` column contains the stable scenario ID. `seed` is the replay root seed; `fixture_seed` identifies the input shared by matching implementations. Validation reports show scenario, implementation, case, fixture seed, check name, measured value, threshold, and failure reason.
+
+In validation mode, `--verify --csv validation.csv` exports one file with one row
+per check, including failures. Columns are
+`group,scenario,variant,case,fixture_seed,check,passed,measured,threshold,reason`,
+followed by alphabetically sorted `metric_<name>` columns supplied by the selected
+checks. Missing metrics are empty cells. `scenario` is the validation display
+name, and `fixture_seed` is the derived input seed; use `--seed` to set the root
+seed for replay. Text fields use CSV quoting for commas, quotes, and newlines.
+Validation does not create a timing samples file. The CLI exits nonzero for
+failed checks, an empty selection, or an export error, and writes the report
+before applying the validation failure exit status.
+
+For example,
+`cargo run --release -- --verify --scenario log2 --seed 42 --csv log2-accuracy.csv`
+exports maximum absolute error (`metric_max_abs`), root mean squared error
+(`metric_rmse`), unequal output count (`metric_mismatches`), and observation count
+(`metric_samples`) against `f32::log2`. These metrics are informational; the log2
+check's PASS status does not impose an accuracy tolerance.
