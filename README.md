@@ -34,7 +34,7 @@ cargo run --release
 # Reproduce input fixtures and execution order
 cargo run --release -- --scenario dot_product --runs 30 --seed 42
 
-# Select implementations and export aggregated timings
+# Select implementations and export statistics plus individual samples
 cargo run --release -- --scenario xoroshiro --variant Original --seed 42 --csv results.csv
 
 # Wall-clock timing instead of architecture counters
@@ -48,12 +48,14 @@ RUSTFLAGS="-C target-cpu=native" cargo run --release
 |---|---|
 | `--verify` | Run dedicated checks; exit nonzero on failures or empty selection |
 | `--seed N` | Root seed; validation defaults to 0, benchmarks choose and print a fresh seed |
-| `--runs N`, `--iter N`, `-r N` | Benchmark samples per implementation/parameter; default 10 |
+| `--runs N`, `--iter N`, `-r N` | Benchmark samples per implementation/parameter; default 30 |
+| `--warmup N` | Warmup runs per selected implementation/parameter before measurement; default 10, 0 disables |
+| `--pin STRATEGY` | Pin to one chosen CPU core: `per-call` (default; also `per-execution`) or `global` |
 | `--config FILE`, `-c FILE` | TOML configuration; otherwise load `config.toml` if it exists |
 | `--scenario LIST` | Comma-separated substrings of family, scenario ID, or display name |
 | `--variant LIST` | Comma-separated registered implementation ID substrings, e.g. `Original,ScalarOpt` |
 | `--tag LIST` | Comma-separated exact tag matches |
-| `--csv FILE` | Export aggregated timing measurements, root seed, and measurement unit |
+| `--csv FILE` | Export timing statistics and a companion `.samples.csv` containing every measured sample |
 | `--filter`, `-f` | Trim timing extremes when there are more than 10 samples |
 | `--help`, `-h` | Show usage |
 | Positional names | Additional scenario filters |
@@ -63,13 +65,17 @@ For custom sizes, create a TOML configuration:
 ```toml
 sample = 30
 seed = 42
+warmup = 10
+pin = "global"
 filter_scenario = ["dot_product"]
 
 [dot_product]
 sizes = [128, 512, 2048]
 ```
 
-Benchmark CSV columns are `group,scenario,variant,context,avg_measurement,seed,unit`. The `scenario` column contains the stable scenario ID. Measurements use x86_64 TSC cycles, aarch64 virtual-counter ticks, or wall-clock nanoseconds according to the target and selected features. Timing reports do not claim correctness; run validation separately.
+Reports show mean, median, p95, sample count, variability, and approximate 95% confidence intervals for the mean. `--csv results.csv` writes summary statistics to `results.csv` and every measured sample to `results.samples.csv`, including execution order, fixture seeds, and filtering decisions. The summary preserves its initial columns `group,scenario,variant,context,avg_measurement,seed,unit` and appends statistical fields; means retain fractional precision. See [BENCHMARKING.md](BENCHMARKING.md) for column definitions and statistical assumptions.
+
+The `scenario` column contains the stable scenario ID. Measurements use x86_64 TSC cycles, aarch64 virtual-counter ticks, or wall-clock nanoseconds according to the target and selected features. Timing reports do not claim correctness; run validation separately.
 
 ## Extend
 

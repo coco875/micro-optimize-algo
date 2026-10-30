@@ -25,4 +25,17 @@ Using `std::simd::f64x4`, we can process 4 offset coordinates simultaneously:
    - Performs a fused element-wise multiplication and accumulation with the position vectors:
      $$\text{res} = \mathbf{g}_x \times x + \mathbf{g}_y \times y + \mathbf{g}_z \times z$$
 
-The `simd_transpose_x4` variant avoids all memory layout shuffling and temporary buffer stores, yielding a performance improvement of up to ~1.45x compared to the scalar baseline.
+The `simd_transpose_x4` variant uses register transposition to gather gradient components. A previously reported speedup of up to ~1.45x predates the runner refactor and has not been revalidated with its current setup and timing boundaries. The original machine, seed, and compiler flags were not recorded here.
+
+## Usage
+
+CLI variant filters use the registered IDs `Original`, `SimdPortableX4`, and `SimdTransposeX4`. Nightly Rust is selected by the repository's toolchain file.
+
+```bash
+cargo run --release -- --verify --scenario grad_dot --seed 42
+cargo run --release -- --scenario grad_dot --runs 30 --seed 42
+```
+
+The `random` scenario prepares coordinates and gradient hashes before timing. Dedicated validation cases check aggregate output against the reference and an independent scalar oracle with numeric tolerances.
+
+Set benchmark sizes in a `[grad_dot]` TOML table, following the root [README.md](../../../README.md). See [BENCHMARKING.md](../../../BENCHMARKING.md) for timing units and replay behavior.

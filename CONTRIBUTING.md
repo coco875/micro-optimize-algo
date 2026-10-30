@@ -42,6 +42,8 @@ Implement `Scenario` and `ScenarioDefinition<V>`:
 
 `Param`, `Fixture`, and `Output` must agree for all implementations of a scenario. Preparation and policy selection are performed through the family's explicit reference specialization and must not depend on the implementation type. Fresh mutable state belongs to `new`/`validate`, not the shared fixture.
 
+Keep optimizer barriers at the shared scenario boundary, with the same input/output protection for every implementation. Avoid adding barriers inside one implementation's loop: scalar and SIMD versions must not incur different artificial barrier costs.
+
 See `src/math/dot_product/scenarios/random.rs` and `cancellation.rs` for independent workloads over one contract, and `src/random/xoroshiro/scenarios/sequence.rs` for collecting a batch outside benchmark timing. A system may contain a pipeline; this version selects one interchangeable system per scenario.
 
 ## Add a family: three initial files
@@ -99,11 +101,15 @@ cargo run --release -- --scenario dot_product --runs 30 --seed 42
 
 Validation is separate from timing. `--verify` reports all selected checks and exits nonzero on failure or an empty selection. Timing repetitions never invoke validation hooks. Tests and `--verify` use seed 0 by default; benchmarks choose and print a fresh seed unless one is supplied.
 
+Benchmarking warms each selected implementation/parameter combination 10 times with fresh state, then runs the measured samples in randomized order. Warmup invokes `task` without a timer or validation and is excluded from reports. `--warmup N` changes the count. CPU affinity uses one chosen core for warmup and measurement, with `--pin per-call` (default) or `--pin global`; unsupported pinning is reported. Both affinity changes and fixture preparation remain outside timing. Validation mode does not warm up or pin the thread.
+
 Use the provided `InputRng` in fixture preparation. Input, validation, and scheduling streams are separated by stable family/scenario/case identifiers. Implementation filters, new implementations, and unrelated scenarios do not change an existing fixture. Replay reproduces inputs and schedule for the same configuration and enabled implementation set; timings remain subject to machine noise.
 
 ## C implementations
 
 C files under `src/` are discovered and compiled using the existing compiler policy. Add Rust wrappers/annotated implementation structs in `code/`, gated with `#[cfg(c_implementation_active)]`. A C implementation generally needs both a `.c` source and a Rust wrapper. Keep unsafe FFI at the wrapper boundary and preserve disabled-C stubs for existing public functions.
+
+The build enables optimization level 3 without `-ffast-math`, preserving the compiler's default floating-point rules.
 
 ## Checks
 

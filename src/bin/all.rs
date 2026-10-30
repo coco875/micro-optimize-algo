@@ -17,6 +17,8 @@ fn main() {
     let mut seed_override = None;
     let mut config_path: Option<String> = None;
     let mut runs_override: Option<u64> = None;
+    let mut warmup_override = None;
+    let mut pin_override = None;
     let mut csv_path: Option<String> = None;
     let mut filter_outliers = false;
     let mut filter_scenario: Option<Vec<String>> = None;
@@ -62,6 +64,25 @@ fn main() {
                     eprintln!("Error: --runs requires a value");
                     std::process::exit(1);
                 }
+            }
+            "--warmup" => {
+                i += 1;
+                warmup_override = Some(
+                    args.get(i)
+                        .and_then(|s| s.parse::<usize>().ok())
+                        .unwrap_or_else(|| {
+                            eprintln!("Error: --warmup requires a non-negative integer");
+                            std::process::exit(1);
+                        }),
+                );
+            }
+            "--pin" => {
+                i += 1;
+                pin_override =
+                    Some(args.get(i).and_then(|s| s.parse().ok()).unwrap_or_else(|| {
+                        eprintln!("Error: --pin requires 'global' or 'per-call'");
+                        std::process::exit(1);
+                    }));
             }
             "--csv" => {
                 i += 1;
@@ -112,8 +133,14 @@ fn main() {
                 );
                 println!("  --seed <number>       Replay inputs and order (validation default: 0)");
                 println!("  -c, --config <file>   Load config from TOML file (default: config.toml if exists)");
-                println!("  -r, --runs <number>   Override number of sample runs");
-                println!("  --csv <file>          Path to save CSV output");
+                println!("  -r, --runs <number>   Override number of sample runs (default: 30)");
+                println!("  --warmup <number>     Warmup runs per variant/parameter (default: 10; 0 disables)");
+                println!(
+                    "  --pin <strategy>      CPU affinity: global or per-call (default: per-call)"
+                );
+                println!(
+                    "  --csv <file>          Export statistics and a companion .samples.csv file"
+                );
                 println!("  -f, --filter          Filter timing outliers");
                 println!("  --scenario <list>     Comma-separated list of scenarios to run");
                 println!("  --variant <list>      Comma-separated list of variants to run");
@@ -164,6 +191,12 @@ fn main() {
     // Apply CLI overrides
     if let Some(r) = runs_override {
         config.sample = Some(r);
+    }
+    if let Some(warmup) = warmup_override {
+        config.warmup = Some(warmup);
+    }
+    if let Some(pin) = pin_override {
+        config.pin = pin;
     }
     if let Some(fs) = filter_scenario {
         config.filter_scenario = Some(fs);

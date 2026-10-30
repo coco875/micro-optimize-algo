@@ -3,7 +3,7 @@ mod build_support;
 
 use std::{
     fs,
-    path::{Path, PathBuf},
+    path::PathBuf,
     process::Command,
     sync::atomic::{AtomicU64, Ordering},
 };
@@ -170,10 +170,30 @@ fn invalid_registration_is_rejected() {
     assert!(tree.generate().unwrap_err().contains("fast.rs"));
 }
 
-fn library(deps: &Path) -> PathBuf {
-    let mut candidates: Vec<_> = fs::read_dir(deps)
-        .unwrap()
-        .map(|e| e.unwrap().path())
+// Cargo can place artifacts in deps/ or build/<package>/<hash>/out/.
+fn dependency_dirs() -> Vec<PathBuf> {
+    let executable = std::env::current_exe().unwrap();
+    let profile = executable
+        .ancestors()
+        .find(|path| path.join("deps").is_dir())
+        .expect("Cargo profile directory");
+    let mut directories = vec![profile.join("deps")];
+    directories.extend(
+        walkdir::WalkDir::new(profile.join("build"))
+            .max_depth(3)
+            .into_iter()
+            .filter_map(Result::ok)
+            .filter(|entry| entry.file_type().is_dir() && entry.file_name() == "out")
+            .map(|entry| entry.into_path()),
+    );
+    directories
+}
+
+fn library(deps: &[PathBuf]) -> PathBuf {
+    let mut candidates: Vec<_> = deps
+        .iter()
+        .flat_map(|directory| fs::read_dir(directory).unwrap())
+        .map(|entry| entry.unwrap().path())
         .filter(|p| {
             p.file_name()
                 .unwrap()
@@ -240,6 +260,10 @@ fn main() {
     for &run in &session.run_ids { registry::run_scenario(&session, run); }
     assert_eq!(single::VALIDATIONS.load(SeqCst), 2);
     assert_eq!(original::CALLS.load(SeqCst), 4); assert_eq!(fast::CALLS.load(SeqCst), 4);
+    for &run in &session.run_ids { registry::warmup_scenario(&session, run); }
+    assert_eq!(single::VALIDATIONS.load(SeqCst), 2);
+    assert_eq!(original::CALLS.load(SeqCst), 7); assert_eq!(fast::CALLS.load(SeqCst), 7);
+    assert_eq!(session.run_ids, replay.run_ids);
     single::assert_fresh_state();
     let filtered = utils::runner::Config { filter_variant: Some(vec!["Fast".into()]), ..config.clone() };
     let selected = registry::init_session(&filtered);
@@ -259,28 +283,34 @@ fn main() {
     assert_eq!(general::counter::code::broken::CALLS.load(SeqCst), 1);
 }
 "#);
-    let deps = std::env::current_exe()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .to_owned();
+    let deps = dependency_dirs();
     let binary = tree.0.join(if cfg!(windows) {
         "harness.exe"
     } else {
         "harness"
     });
-    let output = Command::new("rustc")
+    let mut compiler = Command::new("rustc");
+    let library = library(&deps);
+    compiler
         .args(["--edition=2021", "--crate-name=discovery_harness"])
         .arg(tree.0.join("harness.rs"))
         .arg("--extern")
-        .arg(format!("micro_optimize_algo={}", library(&deps).display()))
-        .arg("-L")
-        .arg(format!("dependency={}", deps.display()))
+        .arg(format!("micro_optimize_algo={}", library.display()))
         .arg("-o")
         .arg(&binary)
-        .env("OUT_DIR", tree.0.join("out"))
-        .output()
-        .unwrap();
+        .env("OUT_DIR", tree.0.join("out"));
+    let metadata = library.with_extension("rmeta");
+    if metadata.is_file() {
+        compiler
+            .arg("--extern")
+            .arg(format!("micro_optimize_algo={}", metadata.display()));
+    }
+    for directory in &deps {
+        compiler
+            .arg("-L")
+            .arg(format!("dependency={}", directory.display()));
+    }
+    let output = compiler.output().unwrap();
     assert!(
         output.status.success(),
         "{}",

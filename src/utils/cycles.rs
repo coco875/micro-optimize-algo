@@ -63,6 +63,8 @@ fn read_cycles_aarch64() -> u64 {
     // but provides consistent timing across cores
     let val: u64;
     unsafe {
+        // TODO(aarch64): add the appropriate ISB ordering around counter reads
+        // and verify timing boundaries on ARM hardware before relying on short-task timings.
         core::arch::asm!("mrs {}, cntvct_el0", out(reg) val);
     }
     val

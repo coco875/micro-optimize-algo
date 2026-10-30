@@ -1,13 +1,29 @@
 //! Unified timing configuration.
 
+pub const DEFAULT_WARMUP_ITERATIONS: usize = 10;
+
 /// CPU pinning strategy during measurements
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Deserialize)]
 pub enum PinStrategy {
     /// Pin once before all measurements (minimal overhead)
+    #[serde(rename = "global")]
     Global,
-    /// Pin/unpin for each execution (more accurate per-call)
+    /// Pin to the session's chosen core for each execution.
     #[default]
+    #[serde(rename = "per-call", alias = "per-execution")]
     PerExecution,
+}
+
+impl std::str::FromStr for PinStrategy {
+    type Err = &'static str;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "global" => Ok(Self::Global),
+            "per-call" | "per-execution" => Ok(Self::PerExecution),
+            _ => Err("pin strategy must be 'global' or 'per-call'"),
+        }
+    }
 }
 
 /// Configuration for timing measurements
@@ -25,7 +41,7 @@ impl Default for TimingConfig {
     fn default() -> Self {
         Self {
             runs_per_variant: 30,
-            warmup_iterations: 10,
+            warmup_iterations: DEFAULT_WARMUP_ITERATIONS,
             pin_strategy: PinStrategy::default(),
         }
     }

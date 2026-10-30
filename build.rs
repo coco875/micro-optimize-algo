@@ -75,7 +75,7 @@ fn compile_c_code() {
             }
 
             println!("cargo:rerun-if-changed=src");
-            build.opt_level(3).flag_if_supported("-ffast-math");
+            build.opt_level(3);
 
             if is_rust_native {
                 build.flag_if_supported("-march=native");

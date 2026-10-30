@@ -2,7 +2,6 @@
 
 use crate::math::grad_dot::GradDotVariant;
 use crate::variant;
-use std::hint::black_box;
 use std::simd::prelude::*;
 
 /// Gradient vectors shared between Perlin and simplex noise (from vanilla `SimplexNoise.GRADIENT`).
@@ -115,7 +114,7 @@ pub fn grad_dot_original(hashes: &[usize], x: &[f64], y: &[f64], z: &[f64]) -> f
         .zip(x.iter())
         .zip(y.iter())
         .zip(z.iter())
-        .map(|(((h, &x_val), &y_val), &z_val)| black_box(grad_dot(*h, x_val, y_val, z_val)))
+        .map(|(((h, &x_val), &y_val), &z_val)| grad_dot(*h, x_val, y_val, z_val))
         .sum()
 }
 
@@ -139,14 +138,14 @@ pub fn grad_dot_simd_portable_x4(hashes: &[usize], x: &[f64], y: &[f64], z: &[f6
         let vx = f64x4::from_slice(&x[idx..idx + 4]);
         let vy = f64x4::from_slice(&y[idx..idx + 4]);
         let vz = f64x4::from_slice(&z[idx..idx + 4]);
-        sum_v += black_box(grad_dot_4x_loop(h, vx, vy, vz));
+        sum_v += grad_dot_4x_loop(h, vx, vy, vz);
     }
 
     let mut total = sum_v.reduce_sum();
 
     // Handle remainder elements
     for i in (chunks * 4)..hashes.len() {
-        total += black_box(grad_dot(hashes[i], x[i], y[i], z[i]));
+        total += grad_dot(hashes[i], x[i], y[i], z[i]);
     }
 
     total
@@ -172,14 +171,14 @@ pub fn grad_dot_simd_transpose_x4(hashes: &[usize], x: &[f64], y: &[f64], z: &[f
         let vx = f64x4::from_slice(&x[idx..idx + 4]);
         let vy = f64x4::from_slice(&y[idx..idx + 4]);
         let vz = f64x4::from_slice(&z[idx..idx + 4]);
-        sum_v += black_box(grad_dot_4x(h, vx, vy, vz));
+        sum_v += grad_dot_4x(h, vx, vy, vz);
     }
 
     let mut total = sum_v.reduce_sum();
 
     // Handle remainder elements
     for i in (chunks * 4)..hashes.len() {
-        total += black_box(grad_dot(hashes[i], x[i], y[i], z[i]));
+        total += grad_dot(hashes[i], x[i], y[i], z[i]);
     }
 
     total

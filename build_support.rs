@@ -353,6 +353,7 @@ pub fn generate(src: &Path, out: &Path) -> Result<(), String> {
     let mut field_values = Vec::new();
     let mut schedules = Vec::new();
     let mut run_arms = Vec::new();
+    let mut warmup_arms = Vec::new();
     let mut metadata_arms = Vec::new();
     let mut verify_functions = Vec::new();
     let mut verify_calls = Vec::new();
@@ -382,6 +383,7 @@ pub fn generate(src: &Path, out: &Path) -> Result<(), String> {
         field_values.push(quote!(#(#cfg)* #field));
         let mut variant_schedules = Vec::new();
         let mut variant_runs = Vec::new();
+        let mut variant_warmups = Vec::new();
         let mut variant_metadata = Vec::new();
         let mut variant_validation = Vec::new();
         let sc_variants: Vec<_> = variants.iter().filter(|v| v.group == *group).collect();
@@ -400,10 +402,19 @@ pub fn generate(src: &Path, out: &Path) -> Result<(), String> {
                     }
                 }
             });
+            let prepare = quote! {
+                let fixture = #sc_ref::prepare(param, &mut InputRng::new(seed));
+                let mut instance = #sc_var::new(&fixture);
+            };
+            variant_warmups.push(quote! {
+                #(#v_cfg)* #v_idx => {
+                    #prepare
+                    instance.task();
+                }
+            });
             variant_runs.push(quote! {
                 #(#v_cfg)* #v_idx => {
-                    let fixture = #sc_ref::prepare(param, &mut InputRng::new(seed));
-                    let mut instance = #sc_var::new(&fixture);
+                    #prepare
                     let timer = crate::utils::scenario::CpuTimer::new();
                     instance.task();
                     timer.elapsed_cycles()
@@ -428,6 +439,7 @@ pub fn generate(src: &Path, out: &Path) -> Result<(), String> {
         }
         schedules.push(quote! { #(#cfg)* if config.matches_scenario(#group, #id, #name, &[#(#tags),*]) { #(#variant_schedules)* } });
         run_arms.push(quote! { #(#cfg)* #s_idx => { let param = &session.#field[param_idx as usize]; match variant_idx { #(#variant_runs)* _ => panic!("invalid variant index") } } });
+        warmup_arms.push(quote! { #(#cfg)* #s_idx => { let param = &session.#field[param_idx as usize]; match variant_idx { #(#variant_warmups)* _ => panic!("invalid variant index") } } });
         metadata_arms.push(quote! { #(#cfg)* #s_idx => { let param = &session.#field[param_idx as usize]; match variant_idx { #(#variant_metadata)* _ => panic!("invalid variant index") } } });
         let reference_id = &sc_variants
             .iter()
@@ -485,13 +497,17 @@ pub fn generate(src: &Path, out: &Path) -> Result<(), String> {
             pub fn init_session(config: &Config) -> BenchmarkSession {
             let root_seed = config.seed.unwrap_or_else(crate::utils::randomness::fresh_seed);
                 let mut run_ids = Vec::new(); #(#initialization)*
-                for sample in 0..config.sample.unwrap_or(10) { #(#schedules)* }
+                for sample in 0..config.sample.unwrap_or(crate::utils::runner::DEFAULT_SAMPLES) { #(#schedules)* }
                 InputRng::new(derive_seed(root_seed, &["schedule"])).shuffle(&mut run_ids);
                 BenchmarkSession { root_seed, run_ids, #(#field_values,)* }
             }
             pub fn run_scenario(session: &BenchmarkSession, run_id: RunId) -> u64 {
                 let (scenario_idx, variant_idx, param_idx, seed) = run_id.unpack();
                 match scenario_idx { #(#run_arms)* _ => panic!("invalid scenario index") }
+            }
+            pub fn warmup_scenario(session: &BenchmarkSession, run_id: RunId) {
+                let (scenario_idx, variant_idx, param_idx, seed) = run_id.unpack();
+                match scenario_idx { #(#warmup_arms)* _ => panic!("invalid scenario index") }
             }
             pub fn get_run_metadata(session: &BenchmarkSession, run_id: RunId) -> RunMetadata {
                 let (scenario_idx, variant_idx, param_idx, seed) = run_id.unpack();

@@ -8,9 +8,17 @@ dot(a, b) = Σ(a[i] * b[i]) = a[0]*b[0] + a[1]*b[1] + ... + a[n]*b[n]
 
 ## Implementations
 
-- **original**: Simple iterator-based implementation using `zip` and `map`. Rust's compiler is already very good at optimizing this.
-- **scalar_opt**: Manually unrolled loop (4 elements per iteration) with 4 independent accumulators to break dependency chains. This allows the CPU to execute multiple multiplications in parallel (instruction-level parallelism).
-- **x86_64-sse2**: Uses SSE2 (128-bit) intrinsics to process 4 floats at once. Available on all x86_64 CPUs.
+CLI variant filters use these registered IDs:
+
+| ID | Implementation | Availability |
+|---|---|---|
+| `Original` | Iterator-based reference using `zip` and `map` | All targets |
+| `ScalarOpt` | Unrolled loop with four independent accumulators | All targets |
+| `Sse2` | 128-bit SIMD, four floats per iteration | x86_64 |
+| `Avx2` | 256-bit SIMD, eight floats per iteration | x86_64 with the `avx2` target feature |
+| `COriginal` | C reference | Detected C compiler |
+| `CScalarOpt` | C unrolled loop | Detected C compiler |
+| `CX86_64Sse2` | C SSE2 implementation | Detected C compiler on x86_64 |
 
 ## Optimization Strategies
 
@@ -26,9 +34,9 @@ sum3 += a[i+3] * b[i+3];
 ```
 
 **Benefits:**
+
 - Fewer branch predictions
 - Better instruction pipelining
-- ~2x speedup on large vectors
 
 ### SIMD (`x86_64-avx2`)
 
@@ -37,14 +45,14 @@ Uses AVX2 256-bit registers to process 8 `f32` values simultaneously:
 ```rust
 let a_vec = _mm256_loadu_ps(a.as_ptr().add(i));
 let b_vec = _mm256_loadu_ps(b.as_ptr().add(i));
-sum_vec = _mm256_fmadd_ps(a_vec, b_vec, sum_vec); // FMA
+sum_vec = _mm256_add_ps(sum_vec, _mm256_mul_ps(a_vec, b_vec));
 ```
 
-**Requirements:** CPU with AVX2 support (Intel Haswell+, AMD Excavator+)
+The implementation is compiled only for x86_64 with the `avx2` target feature enabled. It uses `_mm256_fmadd_ps` instead when the `fma` target feature is also enabled. On a supporting machine, `RUSTFLAGS="-C target-cpu=native"` enables the host's features; the Cargo feature named `avx2` alone does not enable this target feature.
 
-## Benchmark Results
+## Historical benchmark results
 
-Tested on typical x86_64 hardware:
+These approximate results predate the runner refactor. The original machine, seed, compiler flags, and exact SIMD variant were not recorded here. They have not been revalidated with the current setup and timing boundaries; rerun the benchmark before using them for performance comparisons.
 
 | Size | Original | x86_64 | Speedup |
 |------|----------|--------|---------|
@@ -56,9 +64,32 @@ Tested on typical x86_64 hardware:
 ## Usage
 
 ```bash
-# Run dot product benchmarks
-cargo run --bin micro-algo --release -- dot_product
+# Validate both workloads without timing
+cargo run --release -- --verify --scenario dot_product --seed 42
 
-# Custom sizes
-cargo run --bin micro-algo --release -- dot_product --sizes 512,2048,8192
+# Benchmark both workloads with reproducible inputs and execution order
+cargo run --release -- --scenario dot_product --runs 30 --seed 42
 ```
+
+For custom sizes, save this as `dot-product.toml`:
+
+```toml
+sample = 30
+seed = 42
+filter_scenario = ["dot_product"]
+
+[dot_product]
+sizes = [512, 2048, 8192]
+```
+
+```bash
+cargo run --release -- --config dot-product.toml
+```
+
+## Workloads and validation
+
+The `random` scenario uses random vector pairs; `cancellation` alternates large positive and negative terms with small terms. Each implementation receives equivalent logical inputs, prepared before timing. Only the dot-product computation is measured.
+
+Dedicated validation cases check reference parity and an independent f64 product-sum oracle with a rounding budget that accounts for input magnitude and length. Validation sizes are defined by the scenarios independently of the benchmark sizes in TOML.
+
+See [BENCHMARKING.md](../../../BENCHMARKING.md) for timing units, validation, and replay behavior.

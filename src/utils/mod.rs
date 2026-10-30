@@ -5,6 +5,7 @@ pub mod cpu_affinity;
 pub mod randomness;
 pub mod runner;
 pub mod scenario;
+pub mod statistics;
 pub mod timer;
 pub mod tui;
 pub mod validation;
