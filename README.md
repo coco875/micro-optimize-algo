@@ -103,3 +103,9 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the extension interfaces and [BENCHMA
 ```
 
 Optimization contributions should include benchmark results and machine specifications. CI runs validation and compilation checks, rather than using noisy timing results as a pass/fail condition.
+
+## License
+
+Copyright (c) 2025 coco875.
+
+This project, including its procedural macros, is licensed under the GNU General Public License, version 3 or (at your option) any later version (`GPL-3.0-or-later`). See [LICENSE](LICENSE) for the full text.

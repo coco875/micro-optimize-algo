@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 authors = ["Your Name <your.email@example.com>"]
 description = "A collection of micro-optimized algorithms"
-license = "MIT"
+license = "GPL-3.0-or-later"
 readme = "README.md"
 repository = "https://github.com/your-username/micro-optimize-algo"
 
