@@ -5,7 +5,8 @@ use std::collections::{BTreeMap, HashMap};
 use std::io::Write;
 
 use crate::registry::{
-    get_run_metadata, init_session, run_scenario, warmup_scenario, BenchmarkSession,
+    get_run_metadata, init_session, reference_variant, run_scenario, warmup_scenario,
+    BenchmarkSession,
 };
 use crate::utils::cpu_affinity::CpuPinGuard;
 use crate::utils::csv::csv_field;
@@ -296,7 +297,8 @@ pub fn run_benchmarks(config: Config, csv_path: Option<&str>, filter_outliers: b
 
         let variants_map = &grouped[&key];
         let mut unique_variants: Vec<_> = variants_map.keys().cloned().collect();
-        unique_variants.sort_by_key(|v| variant_sort_key(v));
+        let reference = reference_variant(&group);
+        unique_variants.sort_by_key(|v| (reference != Some(*v), variant_sort_key(v)));
 
         let mut variant_stats = Vec::new();
 
@@ -444,6 +446,7 @@ fn print_results_table(results: &[VariantStats], context: &str, runs: usize, fil
         "  Context / Size: {} ({} runs{})",
         context, runs, filter_note
     );
+    println!("  Speedup baseline: {}", results[0].name);
     println!("  {}", "─".repeat(table_width));
     println!(
         "  {:<v_width$} {:>5} {:>14} {:>14} {:>14} {:>14} {:>10} {:>9}",

@@ -149,6 +149,76 @@ fn cli_separates_validation_and_timing_and_rejects_empty_selection() {
 }
 
 #[test]
+fn scalar_math_families_have_std_references_and_complete_accuracy_reports() {
+    let config = Config {
+        seed: Some(42),
+        filter_tag: Some(vec!["scalar-math".into()]),
+        ..Default::default()
+    };
+    let report = verify(&config);
+    assert!(report.passed());
+    assert_eq!(report.records.len(), 72);
+    for group in ["cos", "sin", "tan", "pow2", "pow", "log"] {
+        assert_eq!(
+            micro_optimize_algo::registry::reference_variant(group),
+            Some("Std")
+        );
+        let records: Vec<_> = report.records.iter().filter(|r| r.group == group).collect();
+        assert_eq!(
+            records.len(),
+            12,
+            "{group}: two domains, six implementations"
+        );
+        for record in records {
+            let metrics = &record.result.metrics;
+            assert_eq!(metrics["samples"], "65536");
+            assert_eq!(metrics["nonfinite"], "0");
+            assert!(metrics["max_abs"].parse::<f64>().unwrap().is_finite());
+            assert!(metrics["max_rel"].parse::<f64>().unwrap().is_finite());
+            if record.variant == "Std" {
+                assert_eq!(metrics["mismatches"], "0");
+                assert_eq!(metrics["max_abs"], "0");
+                assert_eq!(metrics["max_rel"], "0");
+            }
+        }
+    }
+}
+
+#[test]
+fn log2_timing_uses_std_as_baseline_when_selected() {
+    for (variants, baseline) in [("BitApprox,Std", "Std"), ("BitApprox", "BitApprox")] {
+        let output = Command::new(env!("CARGO_BIN_EXE_micro-algo"))
+            .args([
+                "--scenario",
+                "log2",
+                "--variant",
+                variants,
+                "--runs",
+                "1",
+                "--warmup",
+                "0",
+                "--seed",
+                "42",
+            ])
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        let report = String::from_utf8(output.stdout).unwrap();
+        let tables: Vec<_> = report.split("Context / Size:").skip(1).collect();
+        assert!(!tables.is_empty());
+        for table in tables {
+            assert!(table.contains(&format!("Speedup baseline: {baseline}")));
+            let first_variant = table
+                .lines()
+                .find(|line| matches!(line.split_whitespace().next(), Some("Std" | "BitApprox")))
+                .unwrap();
+            assert_eq!(first_variant.split_whitespace().next(), Some(baseline));
+            assert!(first_variant.contains("1.00x"));
+        }
+    }
+}
+
+#[test]
 fn cli_exports_validation_metrics_and_reports_export_errors() {
     let dir =
         std::env::temp_dir().join(format!("micro-algo-validation-csv-{}", std::process::id()));
@@ -163,7 +233,7 @@ fn cli_exports_validation_metrics_and_reports_export_errors() {
                 "--seed",
                 "42",
                 "--variant",
-                "Original,Std",
+                "BitApprox,Std",
             ])
             .args(args)
             .output()
@@ -186,7 +256,7 @@ fn cli_exports_validation_metrics_and_reports_export_errors() {
             assert_eq!(rmse, 0.0);
             assert_eq!(max_abs, 0.0);
         } else {
-            assert!(row.starts_with("log2,Log2,Original,"));
+            assert!(row.starts_with("log2,Log2,BitApprox,"));
             assert_eq!(metrics[2], "65536");
             assert!(rmse > 0.6);
             assert!(max_abs > 0.99);
@@ -194,14 +264,14 @@ fn cli_exports_validation_metrics_and_reports_export_errors() {
     }
     assert!(!dir.join("accuracy.samples.csv").exists());
 
-    let filtered = run(&["--csv", "filtered.csv", "--variant", "Original"]);
+    let filtered = run(&["--csv", "filtered.csv", "--variant", "BitApprox"]);
     assert!(filtered.status.success(), "{filtered:?}");
     let csv = std::fs::read_to_string(dir.join("filtered.csv")).unwrap();
     assert_eq!(csv.lines().count(), 3);
     assert!(csv
         .lines()
         .skip(1)
-        .all(|row| row.starts_with("log2,Log2,Original,")));
+        .all(|row| row.starts_with("log2,Log2,BitApprox,")));
 
     let error = run(&["--csv", "missing-directory/accuracy.csv"]);
     assert!(!error.status.success());

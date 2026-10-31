@@ -348,6 +348,24 @@ pub fn generate(src: &Path, out: &Path) -> Result<(), String> {
         .collect();
     write(out, "algorithms.rs", quote!(#(#root)*))?;
 
+    let reference_arms: Vec<_> = families
+        .iter()
+        .map(|(group, family)| {
+            let reference = &family.reference;
+            let variant = variants
+                .iter()
+                .find(|variant| {
+                    let path = &variant.path;
+                    variant.group == *group
+                        && quote!(#path).to_string() == quote!(#reference).to_string()
+                })
+                .expect("validated reference");
+            let id = &variant.id;
+            let cfg = &family.cfg;
+            quote!(#(#cfg)* #group => Some(#id),)
+        })
+        .collect();
+
     let mut fields = Vec::new();
     let mut initialization = Vec::new();
     let mut field_values = Vec::new();
@@ -512,6 +530,9 @@ pub fn generate(src: &Path, out: &Path) -> Result<(), String> {
             pub fn get_run_metadata(session: &BenchmarkSession, run_id: RunId) -> RunMetadata {
                 let (scenario_idx, variant_idx, param_idx, seed) = run_id.unpack();
                 match scenario_idx { #(#metadata_arms)* _ => panic!("invalid scenario index") }
+            }
+            pub fn reference_variant(group: &str) -> Option<&'static str> {
+                match group { #(#reference_arms)* _ => None }
             }
             #(#verify_functions)*
             pub fn verify(config: &Config) -> ValidationReport {

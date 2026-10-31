@@ -11,6 +11,8 @@ The framework automatically discovers implementation and scenario files, generat
 | `dot_product` | math | Random vectors and cancellation-heavy inputs |
 | `grad_dot` | math | Gradient-vector dot products |
 | `log2` | math | f32 approximations, libm, micromath, and fastapprox versus `f32::log2`; timing and accuracy reports |
+| `cos`, `sin`, `tan` | math | Radian inputs, wider angles and near-pole cases; std, libm, micromath, and fastapprox |
+| `pow2`, `pow`, `log` | math | `2^x`, positive-base `x^y`, and natural logarithm; the same library comparisons |
 | `xoroshiro` | random | Generator steps; dedicated sequence/state and entropy validation |
 | `call_vs_branch` | control_flow | Function calls, branches, and inline computation |
 | `elseif_vs_jumptable` | control_flow | Else-if chains, jump tables, and branchless dispatch |
@@ -85,6 +87,20 @@ cargo run --release -- --verify --scenario log2 --seed 42 --csv log2-accuracy.cs
 ```
 
 The validation CSV includes separate numeric columns `metric_max_abs`, `metric_rmse`, `metric_mismatches`, and `metric_samples`, alongside the implementation, case, fixture seed, and check result.
+
+The six additional scalar math families can be selected together with a tag:
+
+```bash
+cargo run --release -- --tag scalar-math --runs 100 --seed 42 --csv math-timing.csv
+cargo run --release -- --verify --tag scalar-math --seed 42 --csv math-accuracy.csv
+```
+
+Their accuracy reports also include maximum relative difference (`metric_max_rel`), excluding zero reference values. `Std` is the accuracy reference and the timing baseline at `1.00x` when selected. See [the scalar math comparisons](src/math/README.md) for domains, API mappings, and interpretation.
+
+All seven scalar math families also include `LookupTable`, using shared tables
+and linear interpolation. Compare it with std using `--variant Std,LookupTable`.
+The roughly 48 KiB of tables are initialized before timing, including when
+warmups are disabled.
 
 ## Extend
 

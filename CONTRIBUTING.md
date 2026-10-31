@@ -44,6 +44,13 @@ Implement `Scenario` and `ScenarioDefinition<V>`:
 
 Keep optimizer barriers at the shared scenario boundary, with the same input/output protection for every implementation. Avoid adding barriers inside one implementation's loop: scalar and SIMD versions must not incur different artificial barrier costs.
 
+For one-time shared implementation state such as lookup tables, expose a default
+no-op `prepare()` method on the family contract and call `V::prepare()` from
+the scenario's `new` method. The scalar math families use this to initialize
+their lookup tables outside the timer, including with zero warmups. Keep lazy
+access checks inside the implementation if they are part of its public call
+cost, and document the excluded first-use construction cost.
+
 See `src/math/dot_product/scenarios/random.rs` and `cancellation.rs` for independent workloads over one contract, and `src/random/xoroshiro/scenarios/sequence.rs` for collecting a batch outside benchmark timing. A system may contain a pipeline; this version selects one interchangeable system per scenario.
 
 ## Add a family: three initial files
